@@ -150,7 +150,11 @@ def select_options(options: list[str], selected: str = "") -> str:
     return "\n".join(parts)
 
 
-def render_page(message: str = "", error: str = "") -> bytes:
+def render_page(message: str = "", error: str = "", values: dict[str, str] | None = None) -> bytes:
+    values = values or {}
+    def field_value(key: str) -> str:
+        return html.escape(values.get(key, ""), quote=True)
+
     message_html = f'<div class="notice success">{html.escape(message)}</div>' if message else ""
     error_html = f'<div class="notice error">{html.escape(error)}</div>' if error else ""
 
@@ -183,19 +187,19 @@ def render_page(message: str = "", error: str = "") -> bytes:
         <div class="grid">
           <label>
             物料型号/牌号
-            <input name="material_code" placeholder="例如 EC-GM62-C20-57564" required>
+            <input name="material_code" value="{field_value("material_code")}" placeholder="例如 EC-GM62-C20-57564" required>
           </label>
           <label>
             供应商/品牌
-            <input name="supplier" placeholder="供应商名称" required>
+            <input name="supplier" value="{field_value("supplier")}" placeholder="供应商名称" required>
           </label>
           <label>
             物料功能/作用
             <select name="material_function" required>
               <option value="">请选择</option>
-              {select_options(FUNCTION_TYPES)}
+              {select_options(FUNCTION_TYPES, values.get("material_function", ""))}
             </select>
-            <input class="other-input" data-other-for="material_function" name="material_function_other" placeholder="选择其他时，请填写具体功能/作用">
+            <input class="other-input" data-other-for="material_function" name="material_function_other" value="{field_value("material_function_other")}" placeholder="选择其他时，请填写具体功能/作用">
           </label>
           <label>
             资料类型
@@ -207,15 +211,15 @@ def render_page(message: str = "", error: str = "") -> bytes:
           </label>
           <label>
             适用基材
-            <input name="substrate" placeholder="例如 SUS、不锈钢、铝合金" required>
+            <input name="substrate" value="{field_value("substrate")}" placeholder="例如 SUS、不锈钢、铝合金" required>
           </label>
           <label>
             适用工艺/工序
             <select name="process_name" required>
               <option value="">请选择</option>
-              {select_options(PROCESS_TYPES)}
+              {select_options(PROCESS_TYPES, values.get("process_name", ""))}
             </select>
-            <input class="other-input" data-other-for="process_name" name="process_name_other" placeholder="选择其他时，请填写具体工艺/工序">
+            <input class="other-input" data-other-for="process_name" name="process_name_other" value="{field_value("process_name_other")}" placeholder="选择其他时，请填写具体工艺/工序">
           </label>
         </div>
 
@@ -226,7 +230,7 @@ def render_page(message: str = "", error: str = "") -> bytes:
 
         <label>
           备注
-          <textarea name="note" rows="3" placeholder="例如：该资料无推荐固化条件；配比需现场试验确认"></textarea>
+          <textarea name="note" rows="3" placeholder="例如：该资料无推荐固化条件；配比需现场试验确认">{html.escape(values.get("note", ""))}</textarea>
         </label>
 
         <button type="submit">上传资料</button>
@@ -327,7 +331,12 @@ class UploadHandler(BaseHTTPRequestHandler):
                 "uploader_ip": self.client_address[0],
             }
         )
-        self.send_html(render_page(message=f"上传成功，记录 ID：{upload_id}"))
+        sticky_values = {
+            key: value
+            for key, value in fields.items()
+            if key not in {"document_type", "document_type_other"}
+        }
+        self.send_html(render_page(message=f"上传成功，记录 ID：{upload_id}", values=sticky_values))
 
     def send_static_css(self) -> None:
         path = BASE_DIR / "static" / "styles.css"
