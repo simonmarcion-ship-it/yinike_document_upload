@@ -22,7 +22,13 @@ FILES_DIR = DATA_DIR / "files"
 DB_PATH = DATA_DIR / "uploads.db"
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "30"))
 
-DOCUMENT_TYPES = ["TDS", "SDS", "MSDS", "COA/检测报告", "其他"]
+DOCUMENT_TYPES = [
+    "TDS（产品技术资料）",
+    "SDS（安全数据表）",
+    "MSDS（化学品安全技术说明书）",
+    "COA（检测报告/合格证）",
+    "其他",
+]
 FUNCTION_TYPES = [
     "主剂",
     "固化剂",
@@ -150,12 +156,40 @@ def select_options(options: list[str], selected: str = "") -> str:
     return "\n".join(parts)
 
 
-def render_page(message: str = "", error: str = "", values: dict[str, str] | None = None) -> bytes:
+def render_success_notice(message: str, details: dict[str, str] | None = None) -> str:
+    if not message:
+        return ""
+    if not details:
+        return f'<div class="notice success">{html.escape(message)}</div>'
+
+    rows = []
+    for label, value in details.items():
+        display_value = value if value else "未填写"
+        rows.append(
+            "<div class=\"success-row\">"
+            f"<dt>{html.escape(label)}</dt>"
+            f"<dd>{html.escape(display_value)}</dd>"
+            "</div>"
+        )
+    return (
+        '<div class="notice success">'
+        f'<div class="success-title">{html.escape(message)}</div>'
+        f'<dl class="success-details">{"".join(rows)}</dl>'
+        "</div>"
+    )
+
+
+def render_page(
+    message: str = "",
+    error: str = "",
+    values: dict[str, str] | None = None,
+    success_details: dict[str, str] | None = None,
+) -> bytes:
     values = values or {}
     def field_value(key: str) -> str:
         return html.escape(values.get(key, ""), quote=True)
 
-    message_html = f'<div class="notice success">{html.escape(message)}</div>' if message else ""
+    message_html = render_success_notice(message, success_details)
     error_html = f'<div class="notice error">{html.escape(error)}</div>' if error else ""
 
     body = f"""<!doctype html>
@@ -336,7 +370,24 @@ class UploadHandler(BaseHTTPRequestHandler):
             for key, value in fields.items()
             if key not in {"document_type", "document_type_other"}
         }
-        self.send_html(render_page(message=f"上传成功，记录 ID：{upload_id}", values=sticky_values))
+        success_details = {
+            "记录 ID": str(upload_id),
+            "物料型号/牌号": material_code,
+            "供应商/品牌": supplier,
+            "物料功能/作用": material_function,
+            "适用基材": substrate,
+            "适用工艺/工序": process_name,
+            "资料类型": document_type,
+            "上传文件": original_filename,
+            "备注": note,
+        }
+        self.send_html(
+            render_page(
+                message="上传成功",
+                values=sticky_values,
+                success_details=success_details,
+            )
+        )
 
     def send_static_css(self) -> None:
         path = BASE_DIR / "static" / "styles.css"

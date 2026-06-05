@@ -148,6 +148,37 @@ button:hover {
   color: #c92a2a;
 }
 
+.success-title {
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.success-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+  font-weight: 400;
+}
+
+.success-row {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.success-row dt {
+  color: #2b8a3e;
+  font-weight: 700;
+}
+
+.success-row dd {
+  margin: 0;
+  color: #1f2933;
+  word-break: break-word;
+}
+
 .section-title {
   display: flex;
   justify-content: space-between;
@@ -214,6 +245,10 @@ a:hover {
   }
 
   .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .success-details {
     grid-template-columns: 1fr;
   }
 }
