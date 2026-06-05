@@ -21,6 +21,8 @@ DATA_DIR = Path(os.environ.get("UPLOAD_DATA_DIR", BASE_DIR / "data")).resolve()
 FILES_DIR = DATA_DIR / "files"
 DB_PATH = DATA_DIR / "uploads.db"
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "30"))
+RAW_BASE_PATH = os.environ.get("BASE_PATH", "").strip()
+BASE_PATH = "" if RAW_BASE_PATH in {"", "/"} else "/" + RAW_BASE_PATH.strip("/")
 
 DOCUMENT_TYPES = [
     "TDS（产品技术资料）",
@@ -44,6 +46,22 @@ FUNCTION_TYPES = [
     "其他",
 ]
 PROCESS_TYPES = ["喷涂", "浸涂", "清洗", "脱脂", "烘干", "固化", "钝化", "喷砂", "包装", "其他"]
+
+
+def app_url(path: str) -> str:
+    if not path.startswith("/"):
+        path = "/" + path
+    return f"{BASE_PATH}{path}" if BASE_PATH else path
+
+
+def route_path(path: str) -> str | None:
+    if not BASE_PATH:
+        return path
+    if path == BASE_PATH:
+        return "/"
+    if path.startswith(BASE_PATH + "/"):
+        return path[len(BASE_PATH):] or "/"
+    return None
 
 
 def init_storage() -> None:
@@ -198,7 +216,7 @@ def render_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>依耐克物料资料上传</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="{app_url("/static/styles.css")}">
 </head>
 <body>
   <main>
@@ -217,7 +235,7 @@ def render_page(
     {error_html}
 
     <section class="panel">
-      <form action="/upload" method="post" enctype="multipart/form-data">
+      <form action="{app_url("/upload")}" method="post" enctype="multipart/form-data">
         <div class="grid">
           <label>
             物料型号/牌号
@@ -294,17 +312,22 @@ def render_page(
 class UploadHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path == "/":
+        path = route_path(parsed.path)
+        if path is None:
+            self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+        if path == "/":
             self.send_html(render_page())
             return
-        if parsed.path == "/static/styles.css":
+        if path == "/static/styles.css":
             self.send_static_css()
             return
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path != "/upload":
+        path = route_path(parsed.path)
+        if path != "/upload":
             self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return
         try:
@@ -414,7 +437,7 @@ def main() -> None:
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8080"))
     server = ThreadingHTTPServer((host, port), UploadHandler)
-    print(f"Yinaike material upload portal: http://{host}:{port}")
+    print(f"Yinaike material upload portal: http://{host}:{port}{BASE_PATH or '/'}")
     server.serve_forever()
 
 

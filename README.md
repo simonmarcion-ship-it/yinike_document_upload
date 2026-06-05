@@ -52,6 +52,18 @@ python app.py
 http://服务器IP:8080/
 ```
 
+如果通过 nginx 挂到域名子路径，例如：
+
+```text
+https://www.hajimitech.com/yinike/upload_document/
+```
+
+则需要在 `.env` 中设置：
+
+```text
+BASE_PATH=/yinike/upload_document
+```
+
 本机测试：
 
 ```text
@@ -66,6 +78,7 @@ http://127.0.0.1:8080/
 |---|---|
 | `HOST` | 默认 `0.0.0.0` |
 | `PORT` | 默认 `8080` |
+| `BASE_PATH` | 部署到域名子路径时使用，例如 `/yinike/upload_document`；直接用端口访问时留空 |
 | `UPLOAD_DATA_DIR` | 上传文件和数据库保存目录，默认 `./data` |
 | `MAX_UPLOAD_MB` | 单个文件最大大小，默认 `30` |
 
@@ -94,6 +107,45 @@ docker compose logs -f
 ```powershell
 docker compose down
 ```
+
+### nginx 子路径反向代理
+
+如果要让供应商访问：
+
+```text
+https://www.hajimitech.com/yinike/upload_document/
+```
+
+先在服务器项目目录的 `.env` 中设置：
+
+```text
+BASE_PATH=/yinike/upload_document
+PORT=8080
+```
+
+然后在 `/www/server/panel/vhost/nginx/www.hajimitech.com.conf` 的 `server { ... }` 内增加：
+
+```nginx
+location = /yinike/upload_document {
+    return 301 /yinike/upload_document/;
+}
+
+location /yinike/upload_document/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    client_max_body_size 100m;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+}
+```
+
+这里的 `proxy_pass` 不要在 `8080` 后面加 `/`，否则后端收到的路径会被 nginx 改写，子路径部署会出问题。
 
 备选：直接 Docker 运行：
 
