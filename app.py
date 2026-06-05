@@ -167,10 +167,10 @@ def render_page(message: str = "", error: str = "") -> bytes:
     <section class="hero">
       <div>
         <h1>依耐克物料资料上传</h1>
-        <p>请上传 PDF 格式的 TDS、SDS/MSDS 或检测资料。一个文件提交一次；同一物料可重复提交多个资料。</p>
+        <p>请上传 TDS、SDS/MSDS、检测报告、图片、表格或其他资料文件。一个文件提交一次；同一物料可重复提交多个资料。</p>
       </div>
       <div class="status">
-        <span>PDF only</span>
+        <span>Any file</span>
         <strong>最大 {MAX_UPLOAD_MB} MB</strong>
       </div>
     </section>
@@ -220,8 +220,8 @@ def render_page(message: str = "", error: str = "") -> bytes:
         </div>
 
         <label>
-          PDF 文件
-          <input type="file" name="file" accept="application/pdf,.pdf" required>
+          资料文件
+          <input type="file" name="file" required>
         </label>
 
         <label>
@@ -294,21 +294,18 @@ class UploadHandler(BaseHTTPRequestHandler):
 
         file_item = files.get("file")
         if file_item is None or not file_item.get("filename"):
-            raise ValueError("请选择 PDF 文件")
+            raise ValueError("请选择资料文件")
 
         original_filename = Path(str(file_item["filename"])).name
-        if not original_filename.lower().endswith(".pdf"):
-            raise ValueError("仅允许上传 PDF 文件")
-
         content = file_item["content"]
         if not isinstance(content, bytes):
             raise ValueError("文件读取失败")
-        if not content.startswith(b"%PDF"):
-            raise ValueError("文件内容不像有效 PDF，请确认后重新上传")
+        if not content:
+            raise ValueError("文件内容为空，请确认后重新上传")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique = uuid.uuid4().hex[:8]
-        safe_filename = f"{timestamp}_{unique}_{safe_segment(original_filename, 'document.pdf')}"
+        safe_filename = f"{timestamp}_{unique}_{safe_segment(original_filename, 'document')}"
         material_dir = FILES_DIR / safe_segment(material_code) / safe_segment(document_type)
         material_dir.mkdir(parents=True, exist_ok=True)
         local_path = material_dir / safe_filename
