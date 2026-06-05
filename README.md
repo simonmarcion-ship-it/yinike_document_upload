@@ -2,15 +2,42 @@
 
 这是一个供应商资料上传页面。供应商打开网页后填写物料信息，选择资料类型，并上传 PDF 格式的 TDS、SDS/MSDS 或检测资料。
 
-当前方案不使用 OSS。所有文件和表单记录都保存在部署服务器上。
+当前方案：
 
-## 行为
+- 不使用 OSS。
+- 不设置上传口令。
+- 不开放后台列表和下载页面。
+- 供应商端只负责上传，不展示任何历史上传记录。
+- 所有文件和表单记录都保存在部署服务器上。
 
-- 供应商端只显示上传表单，不展示任何历史上传记录。
-- 文件保存到服务器本地：`data/files/`
-- 上传记录保存到 SQLite：`data/uploads.db`
-- 每个上传文件对应数据库里一条记录。
-- 甲方内部通过 `/admin?token=<ADMIN_TOKEN>` 查看上传记录和下载文件。
+## 文件和表单如何对应
+
+每次上传会写入一条 SQLite 记录：
+
+```text
+data/uploads.db
+```
+
+这条记录同时保存：
+
+- 物料型号/牌号
+- 供应商/品牌
+- 物料功能/作用
+- 适用基材
+- 适用工艺/工序
+- 资料类型
+- 原始文件名
+- 服务器本地文件路径
+- 上传时间
+- 上传备注
+
+PDF 文件保存到：
+
+```text
+data/files/
+```
+
+因此对应关系由数据库记录维护，不靠文件名猜。
 
 ## 运行
 
@@ -31,14 +58,6 @@ http://服务器IP:8080/
 http://127.0.0.1:8080/
 ```
 
-甲方后台访问：
-
-```text
-http://服务器IP:8080/admin?token=your-admin-token
-```
-
-不要把后台链接发给供应商。
-
 ## 环境变量
 
 可复制 `.env.example` 作为部署参考。
@@ -49,8 +68,6 @@ http://服务器IP:8080/admin?token=your-admin-token
 | `PORT` | 默认 `8080` |
 | `UPLOAD_DATA_DIR` | 上传文件和数据库保存目录，默认 `./data` |
 | `MAX_UPLOAD_MB` | 单个 PDF 最大大小，默认 `30` |
-| `UPLOAD_TOKEN` | 可选。设置后，供应商必须输入上传口令 |
-| `ADMIN_TOKEN` | 推荐设置。设置后可访问后台和下载文件 |
 
 ## Docker 部署
 
@@ -58,13 +75,6 @@ http://服务器IP:8080/admin?token=your-admin-token
 
 ```powershell
 Copy-Item .env.example .env
-```
-
-编辑 `.env`，至少设置：
-
-```text
-UPLOAD_TOKEN=供应商上传口令
-ADMIN_TOKEN=甲方后台口令
 ```
 
 启动：
@@ -92,8 +102,6 @@ docker build -t yinike-material-upload .
 docker run -d --name yinike-material-upload ^
   -p 8080:8080 ^
   -v C:\yinike_upload_data:/app/data ^
-  -e UPLOAD_TOKEN=your-upload-token ^
-  -e ADMIN_TOKEN=your-admin-token ^
   yinike-material-upload
 ```
 
@@ -111,19 +119,6 @@ data/
       SDS/
 ```
 
-数据库里每条记录会保存：
-
-- 物料型号/牌号
-- 供应商/品牌
-- 物料功能/作用
-- 适用基材
-- 适用工艺/工序
-- 资料类型
-- 原始文件名
-- 服务器本地文件路径
-- 上传时间
-- 上传备注
-
 ## 供应商填写字段
 
 - 物料型号/牌号
@@ -137,10 +132,9 @@ data/
 
 如果下拉选择“其他”，页面会显示手动填写框，并要求供应商填写具体内容。
 
-## 安全建议
+## 注意
 
 - 当前只允许上传 PDF。
 - 供应商端不会展示最近上传记录，避免不同供应商互相看到资料。
-- 公网部署时建议同时设置 `UPLOAD_TOKEN` 和 `ADMIN_TOKEN`。
+- 公网部署时，服务器路径不要暴露 `data/` 目录。
 - 服务器应定期备份 `UPLOAD_DATA_DIR`，至少备份 `uploads.db` 和 `files/`。
-- 建议在 nginx 或安全组层面限制访问来源。
