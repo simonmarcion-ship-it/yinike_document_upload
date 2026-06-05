@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import html
+import hashlib
+import hmac
 import os
 import re
 import sqlite3
@@ -13,7 +15,7 @@ from email.policy import default
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -23,6 +25,10 @@ DB_PATH = DATA_DIR / "uploads.db"
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "30"))
 RAW_BASE_PATH = os.environ.get("BASE_PATH", "").strip()
 BASE_PATH = "" if RAW_BASE_PATH in {"", "/"} else "/" + RAW_BASE_PATH.strip("/")
+UPLOAD_PASSWORD = os.environ.get("UPLOAD_PASSWORD", "20250605")
+AUTH_SECRET = os.environ.get("AUTH_SECRET", f"yinike-material-upload:{UPLOAD_PASSWORD}")
+AUTH_COOKIE_NAME = "yinike_upload_auth"
+AUTH_MAX_AGE_SECONDS = int(os.environ.get("AUTH_MAX_AGE_SECONDS", str(7 * 24 * 60 * 60)))
 
 DOCUMENT_TYPES = [
     "TDS（产品技术资料）",
@@ -62,6 +68,54 @@ def route_path(path: str) -> str | None:
     if path.startswith(BASE_PATH + "/"):
         return path[len(BASE_PATH):] or "/"
     return None
+
+
+def cookie_path() -> str:
+    return BASE_PATH or "/"
+
+
+def parse_cookies(cookie_header: str | None) -> dict[str, str]:
+    cookies: dict[str, str] = {}
+    if not cookie_header:
+        return cookies
+    for item in cookie_header.split(";"):
+        if "=" not in item:
+            continue
+        key, value = item.strip().split("=", 1)
+        if key:
+            cookies[key] = value
+    return cookies
+
+
+def sign_auth_expires(expires_at: str) -> str:
+    return hmac.new(
+        AUTH_SECRET.encode("utf-8"),
+        expires_at.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def make_auth_token() -> str:
+    expires_at = str(int(time.time()) + AUTH_MAX_AGE_SECONDS)
+    return f"{expires_at}.{sign_auth_expires(expires_at)}"
+
+
+def is_valid_auth_token(token: str) -> bool:
+    try:
+        expires_at, signature = token.split(".", 1)
+        expires_int = int(expires_at)
+    except ValueError:
+        return False
+    if expires_int < int(time.time()):
+        return False
+    return hmac.compare_digest(signature, sign_auth_expires(expires_at))
+
+
+def auth_cookie_header() -> str:
+    return (
+        f"{AUTH_COOKIE_NAME}={make_auth_token()}; "
+        f"Max-Age={AUTH_MAX_AGE_SECONDS}; Path={cookie_path()}; HttpOnly; SameSite=Lax"
+    )
 
 
 def init_storage() -> None:
@@ -197,6 +251,36 @@ def render_success_notice(message: str, details: dict[str, str] | None = None) -
     )
 
 
+def render_login_page(error: str = "") -> bytes:
+    error_html = f'<div class="notice error">{html.escape(error)}</div>' if error else ""
+    body = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>物料文件上传系统</title>
+  <link rel="stylesheet" href="{app_url("/static/styles.css")}">
+</head>
+<body class="login-body">
+  <main class="login-main">
+    <section class="login-panel">
+      <h1>物料文件上传系统</h1>
+      <p>请输入密码后继续上传资料。</p>
+      {error_html}
+      <form action="{app_url("/login")}" method="post" class="login-form">
+        <label>
+          访问密码
+          <input type="password" name="password" autocomplete="current-password" autofocus required>
+        </label>
+        <button type="submit">进入系统</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>"""
+    return body.encode("utf-8")
+
+
 def render_page(
     message: str = "",
     error: str = "",
@@ -310,30 +394,58 @@ def render_page(
 
 
 class UploadHandler(BaseHTTPRequestHandler):
+    def is_authenticated(self) -> bool:
+        cookies = parse_cookies(self.headers.get("Cookie"))
+        return is_valid_auth_token(cookies.get(AUTH_COOKIE_NAME, ""))
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = route_path(parsed.path)
         if path is None:
             self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return
-        if path == "/":
-            self.send_html(render_page())
-            return
         if path == "/static/styles.css":
             self.send_static_css()
+            return
+        if path == "/":
+            if not self.is_authenticated():
+                self.send_html(render_login_page())
+                return
+            self.send_html(render_page())
             return
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         path = route_path(parsed.path)
+        if path == "/login":
+            self.handle_login()
+            return
         if path != "/upload":
             self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+        if not self.is_authenticated():
+            self.send_html(render_login_page("请先输入密码。"), status=HTTPStatus.UNAUTHORIZED)
             return
         try:
             self.handle_upload()
         except Exception as exc:
             self.send_html(render_page(error=str(exc)), status=HTTPStatus.BAD_REQUEST)
+
+    def handle_login(self) -> None:
+        content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length <= 0 or content_length > 4096:
+            self.send_html(render_login_page("请输入密码。"), status=HTTPStatus.BAD_REQUEST)
+            return
+
+        body = self.rfile.read(content_length).decode("utf-8", errors="replace")
+        fields = parse_qs(body, keep_blank_values=True)
+        password = fields.get("password", [""])[0]
+        if not hmac.compare_digest(password, UPLOAD_PASSWORD):
+            self.send_html(render_login_page("密码错误，请重试。"), status=HTTPStatus.UNAUTHORIZED)
+            return
+
+        self.send_redirect(app_url("/"), headers={"Set-Cookie": auth_cookie_header()})
 
     def handle_upload(self) -> None:
         content_length = int(self.headers.get("Content-Length", "0"))
@@ -427,6 +539,13 @@ class UploadHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def send_redirect(self, location: str, headers: dict[str, str] | None = None) -> None:
+        self.send_response(HTTPStatus.SEE_OTHER)
+        self.send_header("Location", location)
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
 
     def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("[%s] %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), fmt % args))

@@ -5,7 +5,7 @@
 当前方案：
 
 - 不使用 OSS。
-- 不设置上传口令。
+- 设置上传密码，默认 `20250605`。
 - 不开放后台列表和下载页面。
 - 供应商端只负责上传，不展示任何历史上传记录。
 - 所有文件和表单记录都保存在部署服务器上。
@@ -81,6 +81,7 @@ http://127.0.0.1:8080/
 | `BASE_PATH` | 部署到域名子路径时使用，例如 `/yinike/upload_document`；直接用端口访问时留空 |
 | `UPLOAD_DATA_DIR` | 上传文件和数据库保存目录，默认 `./data` |
 | `MAX_UPLOAD_MB` | 单个文件最大大小，默认 `30` |
+| `UPLOAD_PASSWORD` | 上传页面访问密码，默认 `20250605` |
 
 ## Docker 部署
 
@@ -121,6 +122,7 @@ https://www.hajimitech.com/yinike/upload_document/
 ```text
 BASE_PATH=/yinike/upload_document
 PORT=8080
+UPLOAD_PASSWORD=20250605
 ```
 
 然后在 `/www/server/panel/vhost/nginx/www.hajimitech.com.conf` 的 `server { ... }` 内增加：
