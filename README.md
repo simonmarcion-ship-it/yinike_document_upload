@@ -22,19 +22,19 @@ python app.py
 供应商访问：
 
 ```text
-http://服务器IP:8088/
+http://服务器IP:8080/
 ```
 
 本机测试：
 
 ```text
-http://127.0.0.1:8088/
+http://127.0.0.1:8080/
 ```
 
 甲方后台访问：
 
 ```text
-http://服务器IP:8088/admin?token=your-admin-token
+http://服务器IP:8080/admin?token=your-admin-token
 ```
 
 不要把后台链接发给供应商。
@@ -46,7 +46,7 @@ http://服务器IP:8088/admin?token=your-admin-token
 | 变量 | 说明 |
 |---|---|
 | `HOST` | 默认 `0.0.0.0` |
-| `PORT` | 默认 `8088` |
+| `PORT` | 默认 `8080` |
 | `UPLOAD_DATA_DIR` | 上传文件和数据库保存目录，默认 `./data` |
 | `MAX_UPLOAD_MB` | 单个 PDF 最大大小，默认 `30` |
 | `UPLOAD_TOKEN` | 可选。设置后，供应商必须输入上传口令 |
@@ -90,7 +90,7 @@ docker compose down
 ```powershell
 docker build -t yinike-material-upload .
 docker run -d --name yinike-material-upload ^
-  -p 8088:8088 ^
+  -p 8080:8080 ^
   -v C:\yinike_upload_data:/app/data ^
   -e UPLOAD_TOKEN=your-upload-token ^
   -e ADMIN_TOKEN=your-admin-token ^

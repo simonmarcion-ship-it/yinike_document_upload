@@ -6,10 +6,10 @@ COPY app.py /app/app.py
 COPY static /app/static
 
 ENV HOST=0.0.0.0
-ENV PORT=8088
+ENV PORT=8080
 ENV UPLOAD_DATA_DIR=/app/data
 ENV MAX_UPLOAD_MB=30
 
-EXPOSE 8088
+EXPOSE 8080
 
 CMD ["python", "app.py"]

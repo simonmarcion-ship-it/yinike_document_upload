@@ -522,7 +522,7 @@ class UploadHandler(BaseHTTPRequestHandler):
 def main() -> None:
     init_storage()
     host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8088"))
+    port = int(os.environ.get("PORT", "8080"))
     server = ThreadingHTTPServer((host, port), UploadHandler)
     print(f"Yinaike material upload portal: http://{host}:{port}")
     server.serve_forever()
