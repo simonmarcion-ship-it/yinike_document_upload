@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+data
+__pycache__
+*.pyc
+.venv
+venv
+.DS_Store
+Thumbs.db

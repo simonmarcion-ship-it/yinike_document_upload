@@ -1,0 +1,22 @@
+# Runtime data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

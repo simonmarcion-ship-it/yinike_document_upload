@@ -1,0 +1,16 @@
+services:
+  material-upload:
+    build: .
+    container_name: yinike-material-upload
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8088}:8088"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8088
+      UPLOAD_DATA_DIR: /app/data
+      MAX_UPLOAD_MB: "${MAX_UPLOAD_MB:-30}"
+      UPLOAD_TOKEN: "${UPLOAD_TOKEN:-}"
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
+    volumes:
+      - ./data:/app/data
