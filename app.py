@@ -1243,11 +1243,13 @@ def render_internal_page(
                 ("单位", item["unit"]),
                 ("类别", item["category"]),
                 ("供应商编号", item["supplier_code"]),
+                ("最低警戒数", item["min_alert"]),
+                ("最高警戒数", item["max_alert"]),
             ]
             meta_html = "".join(
                 '<div class="meta-item">'
                 f"<span>{html.escape(label)}</span>"
-                f"<strong>{html.escape(value)}</strong>"
+                f"<strong>{html.escape(value or '空')}</strong>"
                 "</div>"
                 for label, value in meta_items
             )
