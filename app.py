@@ -129,10 +129,53 @@ def app_url(path: str) -> str:
     return f"{BASE_PATH}{path}" if BASE_PATH else path
 
 
-def internal_materials_url(query: str = "", show_files: str = "") -> str:
+PAGE_SIZE_OPTIONS = [20, 50, 100]
+STATUS_FILTERS = {
+    "all": "全部",
+    "complete": "已完成",
+    "incomplete": "未完成",
+}
+
+
+def normalize_status_filter(value: str) -> str:
+    return value if value in STATUS_FILTERS else "all"
+
+
+def normalize_per_page(value: str | int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 20
+    return number if number in PAGE_SIZE_OPTIONS else 20
+
+
+def normalize_page(value: str | int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return max(number, 1)
+
+
+def internal_materials_url(
+    query: str = "",
+    show_files: str = "",
+    status_filter: str = "all",
+    page: int = 1,
+    per_page: int = 20,
+) -> str:
     params = {}
     if query:
         params["q"] = query
+    status_filter = normalize_status_filter(status_filter)
+    if status_filter != "all":
+        params["status"] = status_filter
+    per_page = normalize_per_page(per_page)
+    if per_page != 20:
+        params["per_page"] = str(per_page)
+    page = normalize_page(page)
+    if page > 1:
+        params["page"] = str(page)
     if show_files:
         params["show_files"] = show_files
     suffix = f"?{urlencode(params)}" if params else ""
@@ -640,36 +683,82 @@ def db_count_erp_materials() -> int:
         return int(conn.execute("SELECT COUNT(*) FROM erp_materials").fetchone()[0])
 
 
-def db_get_internal_materials(query: str = "", limit: int = 80) -> list[dict[str, str]]:
+def internal_materials_base_sql(search_where: str) -> str:
+    return f"""
+        SELECT
+            e.material_code, e.row_no, e.material_name, e.spec_model, e.unit, e.category,
+            e.supplier_code, e.min_alert, e.max_alert, e.source_filename, e.imported_at,
+            COALESCE(e.active_in_latest_import, 1) AS active_in_latest_import,
+            COALESCE(e.erp_change_note, '') AS erp_change_note,
+            COALESCE(e.erp_change_detected_at, '') AS erp_change_detected_at,
+            COALESCE(n.material_usage, '') AS material_usage,
+            COALESCE(n.process_name, '') AS process_name,
+            COALESCE(n.note, '') AS note,
+            COALESCE(n.updated_at, '') AS note_updated_at,
+            COUNT(f.id) AS file_count
+        FROM erp_materials e
+        LEFT JOIN internal_material_notes n ON n.material_code = e.material_code
+        LEFT JOIN internal_material_files f ON f.material_code = e.material_code
+        {search_where}
+        GROUP BY e.material_code
+    """
+
+
+def completion_filter_sql(status_filter: str) -> str:
+    status_filter = normalize_status_filter(status_filter)
+    complete_expr = "(material_usage <> '' AND process_name <> '' AND file_count > 0)"
+    if status_filter == "complete":
+        return f"WHERE {complete_expr}"
+    if status_filter == "incomplete":
+        return f"WHERE NOT {complete_expr}"
+    return ""
+
+
+def db_count_internal_materials(query: str = "", status_filter: str = "all") -> int:
     pattern = f"%{query.strip()}%"
-    where = ""
+    search_where = ""
+    params: list[str] = []
+    if query.strip():
+        search_where = "WHERE e.material_code LIKE ? OR e.material_name LIKE ? OR e.spec_model LIKE ?"
+        params.extend([pattern, pattern, pattern])
+    status_where = completion_filter_sql(status_filter)
+    sql = f"""
+        WITH material_rows AS (
+            {internal_materials_base_sql(search_where)}
+        )
+        SELECT COUNT(*) FROM material_rows
+        {status_where}
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        return int(conn.execute(sql, params).fetchone()[0])
+
+
+def db_get_internal_materials(
+    query: str = "",
+    status_filter: str = "all",
+    limit: int = 20,
+    offset: int = 0,
+) -> list[dict[str, str]]:
+    pattern = f"%{query.strip()}%"
+    search_where = ""
     params: list[str | int] = []
     if query.strip():
-        where = "WHERE e.material_code LIKE ? OR e.material_name LIKE ? OR e.spec_model LIKE ?"
+        search_where = "WHERE e.material_code LIKE ? OR e.material_name LIKE ? OR e.spec_model LIKE ?"
         params.extend([pattern, pattern, pattern])
-    params.append(limit)
+    status_where = completion_filter_sql(status_filter)
+    params.extend([limit, offset])
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             f"""
-            SELECT
-                e.material_code, e.row_no, e.material_name, e.spec_model, e.unit, e.category,
-                e.supplier_code, e.min_alert, e.max_alert, e.source_filename, e.imported_at,
-                COALESCE(e.active_in_latest_import, 1) AS active_in_latest_import,
-                COALESCE(e.erp_change_note, '') AS erp_change_note,
-                COALESCE(e.erp_change_detected_at, '') AS erp_change_detected_at,
-                COALESCE(n.material_usage, '') AS material_usage,
-                COALESCE(n.process_name, '') AS process_name,
-                COALESCE(n.note, '') AS note,
-                COALESCE(n.updated_at, '') AS note_updated_at,
-                COUNT(f.id) AS file_count
-            FROM erp_materials e
-            LEFT JOIN internal_material_notes n ON n.material_code = e.material_code
-            LEFT JOIN internal_material_files f ON f.material_code = e.material_code
-            {where}
-            GROUP BY e.material_code
-            ORDER BY e.row_no + 0, e.material_code
-            LIMIT ?
+            WITH material_rows AS (
+                {internal_materials_base_sql(search_where)}
+            )
+            SELECT *
+            FROM material_rows
+            {status_where}
+            ORDER BY row_no + 0, material_code
+            LIMIT ? OFFSET ?
             """,
             params,
         ).fetchall()
@@ -1158,7 +1247,13 @@ def render_internal_page(
     error: str = "",
     query: str = "",
     expanded_code: str = "",
+    status_filter: str = "all",
+    page: int = 1,
+    per_page: int = 20,
 ) -> bytes:
+    status_filter = normalize_status_filter(status_filter)
+    per_page = normalize_per_page(per_page)
+    page = normalize_page(page)
     message_html = render_success_notice(message)
     error_html = f'<div class="notice error">{html.escape(error)}</div>' if error else ""
     conflict = db_get_latest_erp_conflict()
@@ -1192,7 +1287,17 @@ def render_internal_page(
             "</section>"
         )
     material_count = db_count_erp_materials()
-    materials = db_get_internal_materials(query)
+    filtered_count = db_count_internal_materials(query, status_filter)
+    total_pages = max((filtered_count + per_page - 1) // per_page, 1)
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
+    materials = db_get_internal_materials(query, status_filter, per_page, offset)
+    state_hidden = (
+        f'<input type="hidden" name="q" value="{html.escape(query, quote=True)}">'
+        f'<input type="hidden" name="status" value="{html.escape(status_filter, quote=True)}">'
+        f'<input type="hidden" name="page" value="{page}">'
+        f'<input type="hidden" name="per_page" value="{per_page}">'
+    )
 
     if not materials:
         records_html = (
@@ -1224,7 +1329,7 @@ def render_internal_page(
                         f'<form action="{app_url("/internal/materials/save-file-note")}" method="post" class="file-note-form">'
                         f'<input type="hidden" name="file_id" value="{html.escape(str(file_item["id"]), quote=True)}">'
                         f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
-                        f'<input type="hidden" name="q" value="{html.escape(query, quote=True)}">'
+                        f"{state_hidden}"
                         f'<textarea name="file_note" rows="2" placeholder="这份文档的备注">{html.escape(file_item.get("file_note") or "")}</textarea>'
                         '<button type="submit">保存文档备注</button>'
                         "</form>"
@@ -1292,7 +1397,7 @@ def render_internal_page(
                 "<h3>用途/工序补录</h3>"
                 f'<form action="{app_url("/internal/materials/save")}" method="post" class="record-form">'
                 f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
-                f'<input type="hidden" name="q" value="{html.escape(query, quote=True)}">'
+                f"{state_hidden}"
                 f'<input name="material_usage" value="{html.escape(item["material_usage"], quote=True)}" placeholder="用途/作用">'
                 f'<select name="process_name" required><option value="">工序-下拉选择</option>{select_options(PROCESS_TYPES, item["process_name"])}</select>'
                 f'<textarea name="note" rows="2" placeholder="内部备注">{html.escape(item["note"])}</textarea>'
@@ -1304,7 +1409,7 @@ def render_internal_page(
                 "<h3>上传文档</h3>"
                 f'<form action="{app_url("/internal/materials/upload-file")}" method="post" enctype="multipart/form-data" class="record-form">'
                 f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
-                f'<input type="hidden" name="q" value="{html.escape(query, quote=True)}">'
+                f"{state_hidden}"
                 f'<select name="document_type" required>{select_options(DOCUMENT_TYPES)}</select>'
                 '<input class="other-input" data-other-for="document_type" name="document_type_other" placeholder="选择其他时，请填写具体资料类型">'
                 '<input type="file" name="file" required>'
@@ -1317,6 +1422,29 @@ def render_internal_page(
                 "</details>"
             )
         records_html = "".join(records)
+
+    status_options_html = "".join(
+        f'<option value="{html.escape(value, quote=True)}"{" selected" if value == status_filter else ""}>{html.escape(label)}</option>'
+        for value, label in STATUS_FILTERS.items()
+    )
+    per_page_options_html = "".join(
+        f'<option value="{value}"{" selected" if value == per_page else ""}>{value} 个/页</option>'
+        for value in PAGE_SIZE_OPTIONS
+    )
+    page_start = 0 if filtered_count == 0 else offset + 1
+    page_end = min(offset + per_page, filtered_count)
+    prev_page = max(page - 1, 1)
+    next_page = min(page + 1, total_pages)
+    prev_url = internal_materials_url(query, "", status_filter, prev_page, per_page)
+    next_url = internal_materials_url(query, "", status_filter, next_page, per_page)
+    pagination_html = (
+        '<div class="pagination">'
+        f'<span>显示 {page_start}-{page_end} / {filtered_count} 条</span>'
+        f'<a class="page-link{" is-disabled" if page <= 1 else ""}" href="{html.escape(prev_url, quote=True)}">上一页</a>'
+        f'<span>第 {page} / {total_pages} 页</span>'
+        f'<a class="page-link{" is-disabled" if page >= total_pages else ""}" href="{html.escape(next_url, quote=True)}">下一页</a>'
+        "</div>"
+    )
 
     body = f"""<!doctype html>
 <html lang="zh-CN">
@@ -1360,13 +1488,26 @@ def render_internal_page(
     <section class="panel">
       <div class="section-title">
         <h2>物料补录</h2>
-        <span>默认显示前 80 条，可按编码、名称、规格搜索</span>
+        <span>可按完成状态筛选，并分页查看</span>
       </div>
-      <form action="{app_url("/internal/materials/")}" method="get" class="search-form">
-        <input name="q" value="{html.escape(query, quote=True)}" placeholder="搜索物料编号、名称或规格">
-        <button type="submit">搜索</button>
+      <form action="{app_url("/internal/materials/")}" method="get" class="list-controls">
+        <label>
+          搜索
+          <input name="q" value="{html.escape(query, quote=True)}" placeholder="物料编号、名称或规格">
+        </label>
+        <label>
+          状态
+          <select name="status">{status_options_html}</select>
+        </label>
+        <label>
+          每页
+          <select name="per_page">{per_page_options_html}</select>
+        </label>
+        <button type="submit">筛选</button>
       </form>
+      {pagination_html}
       <div class="material-list">{records_html}</div>
+      {pagination_html}
     </section>
   </main>
   <script>
@@ -1413,9 +1554,21 @@ class UploadHandler(BaseHTTPRequestHandler):
             if not self.is_authenticated(INTERNAL_AUTH_SCOPE):
                 self.send_html(render_login_page(next_url=self.path))
                 return
-            query = parse_qs(parsed.query).get("q", [""])[0]
-            expanded_code = parse_qs(parsed.query).get("show_files", [""])[0]
-            self.send_html(render_internal_page(query=query, expanded_code=expanded_code))
+            params = parse_qs(parsed.query)
+            query = params.get("q", [""])[0]
+            expanded_code = params.get("show_files", [""])[0]
+            status_filter = params.get("status", ["all"])[0]
+            page = normalize_page(params.get("page", ["1"])[0])
+            per_page = normalize_per_page(params.get("per_page", ["20"])[0])
+            self.send_html(
+                render_internal_page(
+                    query=query,
+                    expanded_code=expanded_code,
+                    status_filter=status_filter,
+                    page=page,
+                    per_page=per_page,
+                )
+            )
             return
         if path == "/internal/materials/refresh-mineru":
             if not self.is_authenticated(INTERNAL_AUTH_SCOPE):
@@ -1560,8 +1713,11 @@ class UploadHandler(BaseHTTPRequestHandler):
         process_name = require_text(fields, "process_name", "适用工序")
         note = get_text(fields, "note")
         query = get_text(fields, "q")
+        status_filter = normalize_status_filter(get_text(fields, "status"))
+        page = normalize_page(get_text(fields, "page"))
+        per_page = normalize_per_page(get_text(fields, "per_page"))
         db_upsert_internal_note(material_code, material_usage, process_name, note)
-        self.send_redirect(internal_materials_url(query, material_code))
+        self.send_redirect(internal_materials_url(query, material_code, status_filter, page, per_page))
 
     def handle_internal_file_upload(self) -> None:
         fields, files = self.parse_multipart_request()
@@ -1569,6 +1725,9 @@ class UploadHandler(BaseHTTPRequestHandler):
         document_type = resolve_other_choice(fields, "document_type", "资料类型")
         file_note = get_text(fields, "file_note")
         query = get_text(fields, "q")
+        status_filter = normalize_status_filter(get_text(fields, "status"))
+        page = normalize_page(get_text(fields, "page"))
+        per_page = normalize_per_page(get_text(fields, "per_page"))
 
         file_item = files.get("file")
         if file_item is None or not file_item.get("filename"):
@@ -1612,7 +1771,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                         "mineru_model_version": MINERU_MODEL_VERSION,
                     },
                 )
-        self.send_redirect(internal_materials_url(query, material_code))
+        self.send_redirect(internal_materials_url(query, material_code, status_filter, page, per_page))
 
     def handle_internal_file_note_save(self) -> None:
         fields = self.parse_urlencoded_fields()
@@ -1621,9 +1780,12 @@ class UploadHandler(BaseHTTPRequestHandler):
             raise ValueError("文件 ID 无效")
         material_code = require_text(fields, "material_code", "物料编号")
         query = get_text(fields, "q")
+        status_filter = normalize_status_filter(get_text(fields, "status"))
+        page = normalize_page(get_text(fields, "page"))
+        per_page = normalize_per_page(get_text(fields, "per_page"))
         file_note = get_text(fields, "file_note")
         db_update_internal_file_note(int(file_id_text), file_note)
-        self.send_redirect(internal_materials_url(query, material_code))
+        self.send_redirect(internal_materials_url(query, material_code, status_filter, page, per_page))
 
     def handle_internal_file_download(self, query_string: str) -> None:
         params = parse_qs(query_string)
@@ -1655,8 +1817,11 @@ class UploadHandler(BaseHTTPRequestHandler):
             raise ValueError("缺少有效的文件 ID")
         query = params.get("q", [""])[0]
         expanded_code = params.get("show_files", [""])[0]
+        status_filter = normalize_status_filter(params.get("status", ["all"])[0])
+        page = normalize_page(params.get("page", ["1"])[0])
+        per_page = normalize_per_page(params.get("per_page", ["20"])[0])
         mineru_refresh_file(int(file_id_text))
-        self.send_redirect(internal_materials_url(query, expanded_code))
+        self.send_redirect(internal_materials_url(query, expanded_code, status_filter, page, per_page))
 
     def handle_upload(self) -> None:
         fields, files = self.parse_multipart_request()

@@ -294,6 +294,43 @@ button:hover {
   margin-top: 0;
 }
 
+.list-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 160px 140px auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.list-controls input,
+.list-controls select {
+  margin-top: 6px;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 10px 0 14px;
+  color: #627d98;
+  font-size: 13px;
+}
+
+.page-link {
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  padding: 5px 12px;
+  background: #ffffff;
+  color: #0b7285;
+}
+
+.page-link.is-disabled {
+  color: #9fb3c8;
+  pointer-events: none;
+}
+
 .material-list {
   display: grid;
   gap: 14px;
@@ -599,6 +636,14 @@ a:hover {
   .hero,
   .section-title {
     display: block;
+  }
+
+  .list-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .pagination {
+    justify-content: flex-start;
   }
 
   .status {
