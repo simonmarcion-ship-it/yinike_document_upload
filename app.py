@@ -248,9 +248,17 @@ def init_storage() -> None:
                 min_alert TEXT,
                 max_alert TEXT,
                 source_filename TEXT,
+                active_in_latest_import INTEGER DEFAULT 1,
                 imported_at TEXT NOT NULL
             )
             """
+        )
+        ensure_columns(
+            conn,
+            "erp_materials",
+            {
+                "active_in_latest_import": "INTEGER DEFAULT 1",
+            },
         )
         conn.execute(
             """
@@ -465,31 +473,54 @@ def db_insert(record: dict[str, str]) -> int:
         return int(cursor.lastrowid)
 
 
-def db_replace_erp_materials(materials: list[dict[str, str]], source_filename: str) -> None:
+def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str) -> dict[str, int]:
     imported_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM erp_materials")
-        conn.executemany(
-            """
-            INSERT INTO erp_materials (
-                material_code, row_no, material_name, spec_model, unit, category,
-                supplier_code, min_alert, max_alert, source_filename, imported_at
-            )
-            VALUES (
-                :material_code, :row_no, :material_name, :spec_model, :unit, :category,
-                :supplier_code, :min_alert, :max_alert, :source_filename, :imported_at
-            )
-            """,
-            [
+        before_codes = {
+            row[0]
+            for row in conn.execute("SELECT material_code FROM erp_materials").fetchall()
+        }
+        incoming_codes = {material["material_code"] for material in materials}
+        conn.execute("UPDATE erp_materials SET active_in_latest_import = 0")
+        for material in materials:
+            conn.execute(
+                """
+                INSERT INTO erp_materials (
+                    material_code, row_no, material_name, spec_model, unit, category,
+                    supplier_code, min_alert, max_alert, source_filename,
+                    active_in_latest_import, imported_at
+                )
+                VALUES (
+                    :material_code, :row_no, :material_name, :spec_model, :unit, :category,
+                    :supplier_code, :min_alert, :max_alert, :source_filename,
+                    1, :imported_at
+                )
+                ON CONFLICT(material_code) DO UPDATE SET
+                    row_no = excluded.row_no,
+                    material_name = excluded.material_name,
+                    spec_model = excluded.spec_model,
+                    unit = excluded.unit,
+                    category = excluded.category,
+                    supplier_code = excluded.supplier_code,
+                    min_alert = excluded.min_alert,
+                    max_alert = excluded.max_alert,
+                    source_filename = excluded.source_filename,
+                    active_in_latest_import = 1,
+                    imported_at = excluded.imported_at
+                """,
                 {
                     **material,
                     "source_filename": source_filename,
                     "imported_at": imported_at,
-                }
-                for material in materials
-            ],
-        )
+                },
+            )
         conn.commit()
+    return {
+        "total": len(materials),
+        "created": len(incoming_codes - before_codes),
+        "updated": len(incoming_codes & before_codes),
+        "inactive": len(before_codes - incoming_codes),
+    }
 
 
 def db_count_erp_materials() -> int:
@@ -512,6 +543,7 @@ def db_get_internal_materials(query: str = "", limit: int = 80) -> list[dict[str
             SELECT
                 e.material_code, e.row_no, e.material_name, e.spec_model, e.unit, e.category,
                 e.supplier_code, e.min_alert, e.max_alert, e.source_filename, e.imported_at,
+                COALESCE(e.active_in_latest_import, 1) AS active_in_latest_import,
                 COALESCE(n.material_usage, '') AS material_usage,
                 COALESCE(n.process_name, '') AS process_name,
                 COALESCE(n.note, '') AS note,
@@ -1088,6 +1120,11 @@ def render_internal_page(
             status_class = "is-complete" if not missing_parts else "is-incomplete"
             status_text = "完成" if not missing_parts else "未完成"
             missing_text = "都已填写" if not missing_parts else "缺：" + "、".join(missing_parts)
+            latest_import_text = (
+                "最新清单"
+                if int(item.get("active_in_latest_import") or 0)
+                else "旧清单保留"
+            )
             records.append(
                 '<details class="material-record" open>'
                 '<summary class="material-record-head">'
@@ -1099,6 +1136,7 @@ def render_internal_page(
                 f'<span class="status-badge {status_class}">{html.escape(status_text)}</span>'
                 f'<span class="summary-chip">{html.escape(missing_text)}</span>'
                 f'<span class="summary-chip">文件 {int(file_count)}</span>'
+                f'<span class="summary-chip">{html.escape(latest_import_text)}</span>'
                 '<span class="toggle-label"><span class="when-open">收起条目</span><span class="when-closed">展开填写</span></span>'
                 "</div>"
                 "</summary>"
@@ -1147,7 +1185,7 @@ def render_internal_page(
     <section class="hero">
       <div>
         <h1>依耐克内部物料维护</h1>
-        <p>上传 ERP 物料编码列表后，内部人员逐条补充用途、适用工序，并给物料挂载资料文件。</p>
+        <p>同步 ERP 物料编码列表后，内部人员逐条补充用途、适用工序，并给物料挂载资料文件。</p>
       </div>
       <div class="status">
         <span>ERP materials</span>
@@ -1161,14 +1199,14 @@ def render_internal_page(
     <section class="panel">
       <div class="section-title">
         <h2>ERP 清单导入</h2>
-        <span>导入会覆盖 ERP 基础清单，但保留已补录的用途、工序和文件</span>
+        <span>同步会新增/更新 ERP 基础字段，保留已补录的用途、工序和文件；旧物料不会删除</span>
       </div>
       <form action="{app_url("/internal/materials/import-erp")}" method="post" enctype="multipart/form-data" class="internal-import">
         <label>
           ERP 物料编码列表（xlsx）
           <input type="file" name="erp_file" accept=".xlsx" required>
         </label>
-        <button type="submit">上传并覆盖 ERP 清单</button>
+        <button type="submit">同步 ERP 清单</button>
       </form>
     </section>
 
@@ -1343,10 +1381,16 @@ class UploadHandler(BaseHTTPRequestHandler):
 
         rows = read_xlsx_rows(content)
         materials = normalize_erp_rows(rows)
-        db_replace_erp_materials(materials, original_filename)
+        stats = db_sync_erp_materials(materials, original_filename)
         self.send_html(
             render_internal_page(
-                message=f"ERP 清单导入完成：{len(materials)} 条物料记录。"
+                message=(
+                    "ERP 清单同步完成："
+                    f"本次清单 {stats['total']} 条，"
+                    f"新增 {stats['created']} 条，"
+                    f"更新 {stats['updated']} 条，"
+                    f"旧清单保留 {stats['inactive']} 条。"
+                )
             )
         )
 
