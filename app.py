@@ -103,6 +103,18 @@ ERP_CHANGE_FIELDS = [
 ]
 
 
+class ErpConflictError(ValueError):
+    def __init__(self, conflicts: list[str]):
+        self.conflicts = conflicts
+        shown = "；".join(conflicts[:20])
+        more = f"；另有 {len(conflicts) - 20} 条未显示" if len(conflicts) > 20 else ""
+        super().__init__(
+            "ERP 清单与既有记录存在冲突，导入已取消。"
+            "请人工核对并修改 ERP 清单或既有记录后再导入。"
+            f"冲突项：{shown}{more}"
+        )
+
+
 def column_index_from_cell_ref(cell_ref: str) -> int:
     letters = re.sub(r"[^A-Z]", "", cell_ref.upper())
     index = 0
@@ -314,6 +326,17 @@ def init_storage() -> None:
                 "mineru_updated_at": "TEXT",
             },
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS erp_import_conflicts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                source_filename TEXT NOT NULL,
+                conflict_count INTEGER NOT NULL,
+                conflict_text TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
 
 
@@ -497,6 +520,46 @@ def describe_erp_changes(existing: dict[str, str], incoming: dict[str, str]) -> 
     return "；".join(changes)
 
 
+def db_save_erp_conflicts(source_filename: str, conflicts: list[str]) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM erp_import_conflicts")
+        conn.execute(
+            """
+            INSERT INTO erp_import_conflicts (
+                created_at, source_filename, conflict_count, conflict_text
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                source_filename,
+                len(conflicts),
+                "\n".join(conflicts),
+            ),
+        )
+        conn.commit()
+
+
+def db_clear_erp_conflicts() -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM erp_import_conflicts")
+        conn.commit()
+
+
+def db_get_latest_erp_conflict() -> dict[str, str] | None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT created_at, source_filename, conflict_count, conflict_text
+            FROM erp_import_conflicts
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str) -> dict[str, int]:
     imported_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with sqlite3.connect(DB_PATH) as conn:
@@ -523,13 +586,7 @@ def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str)
             if change_note:
                 conflicts.append(f"{material['material_code']}：{change_note}")
         if conflicts:
-            shown = "；".join(conflicts[:20])
-            more = f"；另有 {len(conflicts) - 20} 条未显示" if len(conflicts) > 20 else ""
-            raise ValueError(
-                "ERP 清单与既有记录存在冲突，导入已取消。"
-                "请人工核对并修改 ERP 清单或既有记录后再导入。"
-                f"冲突项：{shown}{more}"
-            )
+            raise ErpConflictError(conflicts)
 
         conn.execute("UPDATE erp_materials SET active_in_latest_import = 0")
         for material in materials:
@@ -569,6 +626,7 @@ def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str)
                 },
             )
         conn.commit()
+    db_clear_erp_conflicts()
     return {
         "total": len(materials),
         "created": len(incoming_codes - before_codes),
@@ -1103,6 +1161,36 @@ def render_internal_page(
 ) -> bytes:
     message_html = render_success_notice(message)
     error_html = f'<div class="notice error">{html.escape(error)}</div>' if error else ""
+    conflict = db_get_latest_erp_conflict()
+    conflict_html = ""
+    if conflict:
+        conflict_lines = [
+            line.strip()
+            for line in (conflict.get("conflict_text") or "").splitlines()
+            if line.strip()
+        ]
+        conflict_items = "".join(
+            f"<li>{html.escape(line)}</li>"
+            for line in conflict_lines[:80]
+        )
+        remaining = len(conflict_lines) - 80
+        if remaining > 0:
+            conflict_items += f"<li>另有 {remaining} 条未显示</li>"
+        conflict_html = (
+            '<section class="conflict-report">'
+            '<div class="conflict-report-head">'
+            '<div>'
+            "<h2>ERP 导入冲突报告</h2>"
+            f'<p>{html.escape(conflict["created_at"])} | {html.escape(conflict["source_filename"])} | 共 {int(conflict["conflict_count"])} 条</p>'
+            "</div>"
+            f'<form action="{app_url("/internal/materials/clear-conflicts")}" method="post">'
+            '<button type="submit">清除提示</button>'
+            "</form>"
+            "</div>"
+            "<p>导入已取消。请按下面的物料编号搜索，人工核对并修改 ERP 清单或既有记录后再导入。</p>"
+            f"<ol>{conflict_items}</ol>"
+            "</section>"
+        )
     material_count = db_count_erp_materials()
     materials = db_get_internal_materials(query)
 
@@ -1251,6 +1339,7 @@ def render_internal_page(
 
     {message_html}
     {error_html}
+    {conflict_html}
 
     <section class="panel">
       <div class="section-title">
@@ -1358,6 +1447,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                 "/internal/materials/save",
                 "/internal/materials/upload-file",
                 "/internal/materials/save-file-note",
+                "/internal/materials/clear-conflicts",
             }:
                 if not self.is_authenticated(INTERNAL_AUTH_SCOPE):
                     self.send_html(render_login_page("请先输入密码。", next_url=self.path), status=HTTPStatus.UNAUTHORIZED)
@@ -1369,6 +1459,8 @@ class UploadHandler(BaseHTTPRequestHandler):
                         self.handle_internal_note_save()
                     elif path == "/internal/materials/save-file-note":
                         self.handle_internal_file_note_save()
+                    elif path == "/internal/materials/clear-conflicts":
+                        self.handle_internal_clear_conflicts()
                     else:
                         self.handle_internal_file_upload()
                 except Exception as exc:
@@ -1437,7 +1529,12 @@ class UploadHandler(BaseHTTPRequestHandler):
 
         rows = read_xlsx_rows(content)
         materials = normalize_erp_rows(rows)
-        stats = db_sync_erp_materials(materials, original_filename)
+        try:
+            stats = db_sync_erp_materials(materials, original_filename)
+        except ErpConflictError as exc:
+            db_save_erp_conflicts(original_filename, exc.conflicts)
+            self.send_html(render_internal_page(error=str(exc)), status=HTTPStatus.BAD_REQUEST)
+            return
         self.send_html(
             render_internal_page(
                 message=(
@@ -1449,6 +1546,10 @@ class UploadHandler(BaseHTTPRequestHandler):
                 )
             )
         )
+
+    def handle_internal_clear_conflicts(self) -> None:
+        db_clear_erp_conflicts()
+        self.send_redirect(internal_materials_url())
 
     def handle_internal_note_save(self) -> None:
         fields = self.parse_urlencoded_fields()

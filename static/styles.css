@@ -69,6 +69,48 @@ h1 {
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
+.conflict-report {
+  margin-top: 16px;
+  border: 1px solid #ffb4b4;
+  border-radius: 8px;
+  background: #fff5f5;
+  padding: 16px;
+  color: #8a1f1f;
+}
+
+.conflict-report-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.conflict-report h2 {
+  color: #c92a2a;
+  font-size: 20px;
+}
+
+.conflict-report p {
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+.conflict-report ol {
+  max-height: 260px;
+  overflow: auto;
+  margin: 12px 0 0;
+  padding-left: 22px;
+}
+
+.conflict-report li {
+  margin: 6px 0;
+  line-height: 1.45;
+}
+
+.conflict-report button {
+  background: #c92a2a;
+}
+
 .login-body {
   min-height: 100vh;
   background: #f4f6f8;
