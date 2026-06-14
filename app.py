@@ -163,6 +163,7 @@ def internal_materials_url(
     status_filter: str = "all",
     page: int = 1,
     per_page: int = 20,
+    saved_code: str = "",
 ) -> str:
     params = {}
     if query:
@@ -178,6 +179,8 @@ def internal_materials_url(
         params["page"] = str(page)
     if show_files:
         params["show_files"] = show_files
+    if saved_code:
+        params["saved"] = saved_code
     suffix = f"?{urlencode(params)}" if params else ""
     return f'{app_url("/internal/materials/")}{suffix}'
 
@@ -1250,10 +1253,13 @@ def render_internal_page(
     status_filter: str = "all",
     page: int = 1,
     per_page: int = 20,
+    saved_code: str = "",
 ) -> bytes:
     status_filter = normalize_status_filter(status_filter)
     per_page = normalize_per_page(per_page)
     page = normalize_page(page)
+    if saved_code and not message:
+        message = f"已保存：{saved_code}"
     message_html = render_success_notice(message)
     error_html = f'<div class="notice error">{html.escape(error)}</div>' if error else ""
     conflict = db_get_latest_erp_conflict()
@@ -1377,7 +1383,7 @@ def render_internal_page(
                 else "旧清单保留"
             )
             records.append(
-                '<details class="material-record" open>'
+                '<details class="material-record">'
                 '<summary class="material-record-head">'
                 '<div class="material-title">'
                 f'<strong class="material-code">{html.escape(code)}</strong>'
@@ -1522,6 +1528,18 @@ def render_internal_page(
       select.addEventListener('change', function() {{ syncOtherInput(select); }});
       syncOtherInput(select);
     }});
+    const listControls = document.querySelector('.list-controls');
+    if (listControls) {{
+      listControls.querySelectorAll('select').forEach(function(select) {{
+        select.addEventListener('change', function() {{
+          if (listControls.requestSubmit) {{
+            listControls.requestSubmit();
+          }} else {{
+            listControls.submit();
+          }}
+        }});
+      }});
+    }}
   </script>
 </body>
 </html>"""
@@ -1558,6 +1576,7 @@ class UploadHandler(BaseHTTPRequestHandler):
             status_filter = params.get("status", ["all"])[0]
             page = normalize_page(params.get("page", ["1"])[0])
             per_page = normalize_per_page(params.get("per_page", ["20"])[0])
+            saved_code = params.get("saved", [""])[0]
             self.send_html(
                 render_internal_page(
                     query=query,
@@ -1565,6 +1584,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                     status_filter=status_filter,
                     page=page,
                     per_page=per_page,
+                    saved_code=saved_code,
                 )
             )
             return
@@ -1715,7 +1735,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         page = normalize_page(get_text(fields, "page"))
         per_page = normalize_per_page(get_text(fields, "per_page"))
         db_upsert_internal_note(material_code, material_usage, process_name, note)
-        self.send_redirect(internal_materials_url(query, material_code, status_filter, page, per_page))
+        self.send_redirect(internal_materials_url(query, "", status_filter, page, per_page, material_code))
 
     def handle_internal_file_upload(self) -> None:
         fields, files = self.parse_multipart_request()
@@ -1773,7 +1793,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                         "mineru_model_version": MINERU_MODEL_VERSION,
                     },
                 )
-        self.send_redirect(internal_materials_url(query, material_code, status_filter, page, per_page))
+        self.send_redirect(internal_materials_url(query, "", status_filter, page, per_page, material_code))
 
     def handle_internal_file_note_save(self) -> None:
         fields = self.parse_urlencoded_fields()
@@ -1787,7 +1807,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         per_page = normalize_per_page(get_text(fields, "per_page"))
         file_note = get_text(fields, "file_note")
         db_update_internal_file_note(int(file_id_text), file_note)
-        self.send_redirect(internal_materials_url(query, material_code, status_filter, page, per_page))
+        self.send_redirect(internal_materials_url(query, "", status_filter, page, per_page, material_code))
 
     def handle_internal_file_download(self, query_string: str) -> None:
         params = parse_qs(query_string)
