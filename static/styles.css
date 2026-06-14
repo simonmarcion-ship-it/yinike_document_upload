@@ -258,7 +258,7 @@ button:hover {
 }
 
 .internal-table {
-  min-width: 1500px;
+  min-width: 1180px;
 }
 
 .internal-table th {
@@ -281,6 +281,19 @@ button:hover {
 
 .inline-form button {
   width: fit-content;
+}
+
+.row-divider {
+  height: 1px;
+  margin: 14px 0 10px;
+  background: #e4e7eb;
+}
+
+.subsection-label {
+  margin-bottom: 8px;
+  color: #334e68;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .internal-files {

@@ -1020,7 +1020,7 @@ def render_internal_page(
 
     if not materials:
         rows_html = (
-            '<tr><td colspan="9" class="empty-cell">'
+            '<tr><td colspan="8" class="empty-cell">'
             "暂无物料记录。请先上传 ERP 导出的物料编码列表。"
             "</td></tr>"
         )
@@ -1079,8 +1079,8 @@ def render_internal_page(
                 '<button type="submit">保存</button>'
                 "</form>"
                 f'<span class="muted">更新：{html.escape(note_updated)}</span>'
-                "</td>"
-                "<td>"
+                '<div class="row-divider"></div>'
+                '<div class="subsection-label">上传文档</div>'
                 f'<form action="{app_url("/internal/materials/upload-file")}" method="post" enctype="multipart/form-data" class="inline-form">'
                 f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
                 f'<input type="hidden" name="q" value="{html.escape(query, quote=True)}">'
@@ -1155,8 +1155,7 @@ def render_internal_page(
               <th>单位</th>
               <th>类别</th>
               <th>供应商编号</th>
-              <th>用途/工序补录</th>
-              <th>上传文档</th>
+              <th>用途/工序/文档</th>
             </tr>
           </thead>
           <tbody>{rows_html}</tbody>
