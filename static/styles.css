@@ -468,6 +468,19 @@ button:hover {
   min-width: 0;
 }
 
+.combined-record-form {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.combined-record-form .action-panel {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
 .action-panel h3 {
   margin: 0 0 10px;
   color: #334e68;
@@ -481,12 +494,28 @@ button:hover {
 
 .record-form input,
 .record-form select,
-.record-form textarea {
+.record-form textarea,
+.combined-record-form input,
+.combined-record-form select,
+.combined-record-form textarea {
   margin-top: 0;
 }
 
-.record-form button {
+.record-form button,
+.combined-submit button {
   width: fit-content;
+}
+
+.combined-submit {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.material-actions > .internal-files {
+  grid-column: 2;
 }
 
 .internal-table-wrap {
@@ -658,6 +687,15 @@ a:hover {
   .material-record-head,
   .material-actions {
     display: block;
+  }
+
+  .combined-record-form {
+    display: block;
+  }
+
+  .material-actions > .internal-files {
+    grid-column: auto;
+    margin-top: 12px;
   }
 
   .record-summary-status {

@@ -1393,31 +1393,29 @@ def render_internal_page(
                 "</summary>"
                 f'<div class="material-meta">{meta_html}</div>'
                 '<div class="material-actions">'
-                '<section class="action-panel">'
-                "<h3>用途/工序补录</h3>"
-                f'<form action="{app_url("/internal/materials/save")}" method="post" class="record-form">'
+                f'<form action="{app_url("/internal/materials/upload-file")}" method="post" enctype="multipart/form-data" class="combined-record-form">'
                 f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
                 f"{state_hidden}"
-                f'<input name="material_usage" value="{html.escape(item["material_usage"], quote=True)}" placeholder="用途/作用">'
+                '<section class="action-panel">'
+                "<h3>用途/工序补录</h3>"
+                f'<input name="material_usage" value="{html.escape(item["material_usage"], quote=True)}" placeholder="用途/作用" required>'
                 f'<select name="process_name" required><option value="">工序-下拉选择</option>{select_options(PROCESS_TYPES, item["process_name"])}</select>'
                 f'<textarea name="note" rows="2" placeholder="内部备注">{html.escape(item["note"])}</textarea>'
-                '<button type="submit">保存补录</button>'
-                "</form>"
                 f'<span class="muted">更新：{html.escape(note_updated)}</span>'
                 "</section>"
                 '<section class="action-panel">'
                 "<h3>上传文档</h3>"
-                f'<form action="{app_url("/internal/materials/upload-file")}" method="post" enctype="multipart/form-data" class="record-form">'
-                f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
-                f"{state_hidden}"
                 f'<select name="document_type" required>{select_options(DOCUMENT_TYPES)}</select>'
                 '<input class="other-input" data-other-for="document_type" name="document_type_other" placeholder="选择其他时，请填写具体资料类型">'
                 '<input type="file" name="file" required>'
                 '<textarea name="file_note" rows="2" placeholder="这份文档的备注，可先不填"></textarea>'
-                '<button type="submit">上传文档</button>'
+                "</section>"
+                '<div class="combined-submit">'
+                '<button type="submit">保存并上传</button>'
+                '<span class="muted">填写用途、工序并选择文件后提交；保存后补录内容会保留显示。</span>'
+                "</div>"
                 "</form>"
                 f"{files_html}"
-                "</section>"
                 "</div>"
                 "</details>"
             )
@@ -1722,6 +1720,9 @@ class UploadHandler(BaseHTTPRequestHandler):
     def handle_internal_file_upload(self) -> None:
         fields, files = self.parse_multipart_request()
         material_code = require_text(fields, "material_code", "物料编号")
+        material_usage = require_text(fields, "material_usage", "用途/作用")
+        process_name = require_text(fields, "process_name", "适用工序")
+        note = get_text(fields, "note")
         document_type = resolve_other_choice(fields, "document_type", "资料类型")
         file_note = get_text(fields, "file_note")
         query = get_text(fields, "q")
@@ -1745,6 +1746,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         local_path = material_dir / safe_filename
         local_path.write_bytes(content)
 
+        db_upsert_internal_note(material_code, material_usage, process_name, note)
         file_id = db_insert_internal_file(
             {
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
