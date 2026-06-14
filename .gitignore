@@ -1,5 +1,7 @@
 # Runtime data
 data/
+local_data/
+local_server.*.log
 *.db
 *.sqlite
 *.sqlite3

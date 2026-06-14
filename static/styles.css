@@ -295,6 +295,31 @@ button:hover {
   padding-left: 18px;
 }
 
+.internal-files li + li {
+  margin-top: 12px;
+}
+
+.file-record-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.file-note-form {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.file-note-form textarea {
+  margin-top: 0;
+}
+
+.file-note-form button {
+  width: fit-content;
+}
+
 .mineru-meta {
   display: flex;
   flex-wrap: wrap;

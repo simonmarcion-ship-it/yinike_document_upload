@@ -84,6 +84,7 @@ http://127.0.0.1:8080/
 | `UPLOAD_PASSWORD` | 上传页面访问密码，默认 `20250605` |
 | `INTERNAL_PASSWORD` | 内部物料维护页面访问密码，默认 `20250605`；建议上线后与供应商上传密码分开 |
 | `MINERU_API_KEY` | MinerU API key；为空时内部文件只保存，不提交解析 |
+| `MINERU_AUTO_PARSE` | 是否自动提交 MinerU 解析，默认 `false`；当前阶段只收原件，保持关闭 |
 | `MINERU_MODEL_VERSION` | MinerU 解析模型，默认 `vlm` |
 | `MINERU_LANGUAGE` | MinerU 文档语言，默认 `ch` |
 | `MINERU_MAX_WAIT_SECONDS` | 上传后同步等待解析结果的秒数，默认 `12`；超时后可在页面刷新状态 |
@@ -130,6 +131,7 @@ PORT=8080
 UPLOAD_PASSWORD=20250605
 INTERNAL_PASSWORD=20250605
 MINERU_API_KEY=填你的_MinerU_API_Key
+MINERU_AUTO_PARSE=false
 MINERU_MODEL_VERSION=vlm
 MINERU_LANGUAGE=ch
 ```
@@ -206,8 +208,9 @@ https://service.hajimitech.com/yinike/upload_document/internal/materials/
 - 上传并覆盖 ERP 导出的物料编码列表 `.xlsx`。
 - 按物料编号、物料名称、规格搜索。
 - 对每个物料补充用途/作用、适用工序、内部备注。
-- 对每个物料上传资料文件。
-- 内部资料文件上传后会提交 MinerU 解析；页面显示 batch、状态、错误信息和结果链接。
+- 对每个物料上传资料原件。
+- 每次上传形成一条文件记录，页面可显示文件名、下载原件，并给该文档单独填写备注。
+- 当前阶段默认不做识别；`MINERU_AUTO_PARSE=false` 时不会提交 MinerU。
 
 导入 ERP 清单只覆盖 ERP 基础字段，已经人工补录的用途、工序、备注和文件会保留。
 

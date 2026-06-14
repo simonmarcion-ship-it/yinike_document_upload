@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib import error as urlerror
 from urllib import request as urlrequest
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 from xml.etree import ElementTree as ET
 
 
@@ -197,6 +197,7 @@ def env_bool(name: str, default: bool) -> bool:
 MINERU_ENABLE_OCR = env_bool("MINERU_ENABLE_OCR", True)
 MINERU_ENABLE_TABLE = env_bool("MINERU_ENABLE_TABLE", True)
 MINERU_ENABLE_FORMULA = env_bool("MINERU_ENABLE_FORMULA", False)
+MINERU_AUTO_PARSE = env_bool("MINERU_AUTO_PARSE", False)
 
 
 def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
@@ -279,6 +280,7 @@ def init_storage() -> None:
             conn,
             "internal_material_files",
             {
+                "file_note": "TEXT",
                 "mineru_status": "TEXT DEFAULT 'not_submitted'",
                 "mineru_batch_id": "TEXT",
                 "mineru_data_id": "TEXT",
@@ -535,6 +537,7 @@ def db_get_internal_files(material_code: str) -> list[dict[str, str]]:
             """
             SELECT
                 id, created_at, document_type, original_filename, stored_path,
+                COALESCE(file_note, '') AS file_note,
                 mineru_status, mineru_batch_id, mineru_data_id, mineru_result_url,
                 mineru_result_dir, mineru_result_json_path, mineru_error,
                 mineru_model_version, mineru_updated_at
@@ -579,11 +582,11 @@ def db_insert_internal_file(record: dict[str, str]) -> int:
             """
             INSERT INTO internal_material_files (
                 created_at, material_code, document_type, original_filename, stored_path,
-                uploader_ip, mineru_status, mineru_model_version, mineru_updated_at
+                uploader_ip, file_note, mineru_status, mineru_model_version, mineru_updated_at
             )
             VALUES (
                 :created_at, :material_code, :document_type, :original_filename, :stored_path,
-                :uploader_ip, :mineru_status, :mineru_model_version, :mineru_updated_at
+                :uploader_ip, :file_note, :mineru_status, :mineru_model_version, :mineru_updated_at
             )
             """,
             record,
@@ -618,6 +621,15 @@ def db_update_internal_file_mineru(file_id: int, updates: dict[str, str]) -> Non
         conn.execute(
             f"UPDATE internal_material_files SET {assignments} WHERE id = :id",
             {**updates, "id": file_id},
+        )
+        conn.commit()
+
+
+def db_update_internal_file_note(file_id: int, file_note: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE internal_material_files SET file_note = ? WHERE id = ?",
+            (file_note, file_id),
         )
         conn.commit()
 
@@ -1022,36 +1034,24 @@ def render_internal_page(
             if expanded_code == code:
                 file_rows = []
                 for file_item in db_get_internal_files(code):
-                    mineru_status = file_item.get("mineru_status") or "not_submitted"
-                    mineru_error = file_item.get("mineru_error") or ""
-                    mineru_updated = file_item.get("mineru_updated_at") or "未更新"
-                    result_url = file_item.get("mineru_result_url") or ""
-                    result_dir = file_item.get("mineru_result_dir") or ""
-                    batch_id = file_item.get("mineru_batch_id") or ""
-                    refresh_url = app_url(
-                        "/internal/materials/refresh-mineru?"
-                        + urlencode({"file_id": str(file_item["id"]), "q": query, "show_files": code})
+                    download_url = app_url(
+                        "/internal/materials/download-file?"
+                        + urlencode({"file_id": str(file_item["id"])})
                     )
-                    result_parts = [
-                        f'<span class="mineru-status">MinerU：{html.escape(mineru_status)}</span>',
-                        f'<a href="{html.escape(refresh_url, quote=True)}">刷新解析状态</a>',
-                    ]
-                    if batch_id:
-                        result_parts.append(f'<span class="muted">batch {html.escape(batch_id)}</span>')
-                    if result_url:
-                        result_parts.append(
-                            f'<a href="{html.escape(result_url, quote=True)}" target="_blank" rel="noreferrer">结果 zip</a>'
-                        )
-                    if result_dir:
-                        result_parts.append(f'<span class="muted">本地结果：{html.escape(result_dir)}</span>')
-                    if mineru_error:
-                        result_parts.append(f'<span class="error-text">{html.escape(mineru_error)}</span>')
                     file_rows.append(
                         "<li>"
-                        f"{html.escape(file_item['created_at'])} | "
-                        f"{html.escape(file_item['document_type'])} | "
-                        f"{html.escape(file_item['original_filename'])}"
-                        f'<div class="mineru-meta">{" | ".join(result_parts)} | 更新：{html.escape(mineru_updated)}</div>'
+                        '<div class="file-record-head">'
+                        f"<span>{html.escape(file_item['created_at'])}</span>"
+                        f"<span>{html.escape(file_item['document_type'])}</span>"
+                        f'<a href="{html.escape(download_url, quote=True)}">{html.escape(file_item["original_filename"])}</a>'
+                        "</div>"
+                        f'<form action="{app_url("/internal/materials/save-file-note")}" method="post" class="file-note-form">'
+                        f'<input type="hidden" name="file_id" value="{html.escape(str(file_item["id"]), quote=True)}">'
+                        f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
+                        f'<input type="hidden" name="q" value="{html.escape(query, quote=True)}">'
+                        f'<textarea name="file_note" rows="2" placeholder="这份文档的备注">{html.escape(file_item.get("file_note") or "")}</textarea>'
+                        '<button type="submit">保存文档备注</button>'
+                        "</form>"
                         "</li>"
                     )
                 files_html = (
@@ -1087,7 +1087,8 @@ def render_internal_page(
                 f'<select name="document_type" required>{select_options(DOCUMENT_TYPES)}</select>'
                 '<input class="other-input" data-other-for="document_type" name="document_type_other" placeholder="选择其他时，请填写具体资料类型">'
                 '<input type="file" name="file" required>'
-                '<button type="submit">上传文件</button>'
+                '<textarea name="file_note" rows="2" placeholder="这份文档的备注，可先不填"></textarea>'
+                '<button type="submit">上传文档</button>'
                 "</form>"
                 f'<a href="{html.escape(internal_materials_url(query, code), quote=True)}">文件 {file_count}</a>'
                 f"{files_html}"
@@ -1155,7 +1156,7 @@ def render_internal_page(
               <th>类别</th>
               <th>供应商编号</th>
               <th>用途/工序补录</th>
-              <th>资料文件</th>
+              <th>上传文档</th>
             </tr>
           </thead>
           <tbody>{rows_html}</tbody>
@@ -1220,6 +1221,15 @@ class UploadHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_html(render_internal_page(error=str(exc)), status=HTTPStatus.BAD_REQUEST)
             return
+        if path == "/internal/materials/download-file":
+            if not self.is_authenticated(INTERNAL_AUTH_SCOPE):
+                self.send_html(render_login_page(next_url=self.path))
+                return
+            try:
+                self.handle_internal_file_download(parsed.query)
+            except Exception as exc:
+                self.send_html(render_internal_page(error=str(exc)), status=HTTPStatus.NOT_FOUND)
+            return
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self) -> None:
@@ -1233,6 +1243,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                 "/internal/materials/import-erp",
                 "/internal/materials/save",
                 "/internal/materials/upload-file",
+                "/internal/materials/save-file-note",
             }:
                 if not self.is_authenticated(INTERNAL_AUTH_SCOPE):
                     self.send_html(render_login_page("请先输入密码。", next_url=self.path), status=HTTPStatus.UNAUTHORIZED)
@@ -1242,6 +1253,8 @@ class UploadHandler(BaseHTTPRequestHandler):
                         self.handle_internal_erp_import()
                     elif path == "/internal/materials/save":
                         self.handle_internal_note_save()
+                    elif path == "/internal/materials/save-file-note":
+                        self.handle_internal_file_note_save()
                     else:
                         self.handle_internal_file_upload()
                 except Exception as exc:
@@ -1331,6 +1344,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         fields, files = self.parse_multipart_request()
         material_code = require_text(fields, "material_code", "物料编号")
         document_type = resolve_other_choice(fields, "document_type", "资料类型")
+        file_note = get_text(fields, "file_note")
         query = get_text(fields, "q")
 
         file_item = files.get("file")
@@ -1357,23 +1371,59 @@ class UploadHandler(BaseHTTPRequestHandler):
                 "original_filename": original_filename,
                 "stored_path": str(local_path),
                 "uploader_ip": self.client_address[0],
+                "file_note": file_note,
                 "mineru_status": "saved",
                 "mineru_model_version": MINERU_MODEL_VERSION,
                 "mineru_updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
         )
-        try:
-            mineru_submit_file(file_id)
-        except Exception as exc:
-            db_update_internal_file_mineru(
-                file_id,
-                {
-                    "mineru_status": "submit_failed",
-                    "mineru_error": str(exc),
-                    "mineru_model_version": MINERU_MODEL_VERSION,
-                },
-            )
+        if MINERU_AUTO_PARSE:
+            try:
+                mineru_submit_file(file_id)
+            except Exception as exc:
+                db_update_internal_file_mineru(
+                    file_id,
+                    {
+                        "mineru_status": "submit_failed",
+                        "mineru_error": str(exc),
+                        "mineru_model_version": MINERU_MODEL_VERSION,
+                    },
+                )
         self.send_redirect(internal_materials_url(query, material_code))
+
+    def handle_internal_file_note_save(self) -> None:
+        fields = self.parse_urlencoded_fields()
+        file_id_text = require_text(fields, "file_id", "文件 ID")
+        if not file_id_text.isdigit():
+            raise ValueError("文件 ID 无效")
+        material_code = require_text(fields, "material_code", "物料编号")
+        query = get_text(fields, "q")
+        file_note = get_text(fields, "file_note")
+        db_update_internal_file_note(int(file_id_text), file_note)
+        self.send_redirect(internal_materials_url(query, material_code))
+
+    def handle_internal_file_download(self, query_string: str) -> None:
+        params = parse_qs(query_string)
+        file_id_text = params.get("file_id", [""])[0]
+        if not file_id_text.isdigit():
+            raise ValueError("缺少有效的文件 ID")
+        record = db_get_internal_file(int(file_id_text))
+        file_path = Path(record["stored_path"]).resolve()
+        internal_root = INTERNAL_FILES_DIR.resolve()
+        try:
+            file_path.relative_to(internal_root)
+        except ValueError as exc:
+            raise ValueError("文件路径无效") from exc
+        if not file_path.exists() or not file_path.is_file():
+            raise ValueError("文件不存在")
+        data = file_path.read_bytes()
+        filename = record.get("original_filename") or file_path.name
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
+        self.end_headers()
+        self.wfile.write(data)
 
     def handle_internal_mineru_refresh(self, query_string: str) -> None:
         params = parse_qs(query_string)
