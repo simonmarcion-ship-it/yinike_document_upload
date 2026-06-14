@@ -1294,7 +1294,7 @@ def render_internal_page(
                 f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
                 f'<input type="hidden" name="q" value="{html.escape(query, quote=True)}">'
                 f'<input name="material_usage" value="{html.escape(item["material_usage"], quote=True)}" placeholder="用途/作用">'
-                f'<select name="process_name">{select_options(PROCESS_TYPES, item["process_name"])}</select>'
+                f'<select name="process_name" required><option value="">工序-下拉选择</option>{select_options(PROCESS_TYPES, item["process_name"])}</select>'
                 f'<textarea name="note" rows="2" placeholder="内部备注">{html.escape(item["note"])}</textarea>'
                 '<button type="submit">保存补录</button>'
                 "</form>"
