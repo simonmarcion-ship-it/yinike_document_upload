@@ -91,6 +91,16 @@ ERP_HEADERS = [
     "最低警戒数",
     "最高警戒数",
 ]
+ERP_CHANGE_FIELDS = [
+    ("row_no", "序号"),
+    ("material_name", "物料名称"),
+    ("spec_model", "规格型号"),
+    ("unit", "单位"),
+    ("category", "类别"),
+    ("supplier_code", "供应商编号"),
+    ("min_alert", "最低警戒数"),
+    ("max_alert", "最高警戒数"),
+]
 
 
 def column_index_from_cell_ref(cell_ref: str) -> int:
@@ -249,6 +259,8 @@ def init_storage() -> None:
                 max_alert TEXT,
                 source_filename TEXT,
                 active_in_latest_import INTEGER DEFAULT 1,
+                erp_change_note TEXT,
+                erp_change_detected_at TEXT,
                 imported_at TEXT NOT NULL
             )
             """
@@ -258,6 +270,8 @@ def init_storage() -> None:
             "erp_materials",
             {
                 "active_in_latest_import": "INTEGER DEFAULT 1",
+                "erp_change_note": "TEXT",
+                "erp_change_detected_at": "TEXT",
             },
         )
         conn.execute(
@@ -473,27 +487,51 @@ def db_insert(record: dict[str, str]) -> int:
         return int(cursor.lastrowid)
 
 
+def describe_erp_changes(existing: dict[str, str], incoming: dict[str, str]) -> str:
+    changes = []
+    for key, label in ERP_CHANGE_FIELDS:
+        old_value = str(existing.get(key) or "").strip()
+        new_value = str(incoming.get(key) or "").strip()
+        if old_value != new_value:
+            changes.append(f"{label}: {old_value or '空'} -> {new_value or '空'}")
+    return "；".join(changes)
+
+
 def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str) -> dict[str, int]:
     imported_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with sqlite3.connect(DB_PATH) as conn:
-        before_codes = {
-            row[0]
-            for row in conn.execute("SELECT material_code FROM erp_materials").fetchall()
+        conn.row_factory = sqlite3.Row
+        existing_rows = {
+            row["material_code"]: dict(row)
+            for row in conn.execute(
+                """
+                SELECT material_code, row_no, material_name, spec_model, unit, category,
+                       supplier_code, min_alert, max_alert
+                FROM erp_materials
+                """
+            ).fetchall()
         }
+        before_codes = set(existing_rows)
         incoming_codes = {material["material_code"] for material in materials}
         conn.execute("UPDATE erp_materials SET active_in_latest_import = 0")
+        changed_count = 0
         for material in materials:
+            existing = existing_rows.get(material["material_code"])
+            change_note = describe_erp_changes(existing, material) if existing else ""
+            change_detected_at = imported_at if change_note else ""
+            if change_note:
+                changed_count += 1
             conn.execute(
                 """
                 INSERT INTO erp_materials (
                     material_code, row_no, material_name, spec_model, unit, category,
                     supplier_code, min_alert, max_alert, source_filename,
-                    active_in_latest_import, imported_at
+                    active_in_latest_import, erp_change_note, erp_change_detected_at, imported_at
                 )
                 VALUES (
                     :material_code, :row_no, :material_name, :spec_model, :unit, :category,
                     :supplier_code, :min_alert, :max_alert, :source_filename,
-                    1, :imported_at
+                    1, :erp_change_note, :erp_change_detected_at, :imported_at
                 )
                 ON CONFLICT(material_code) DO UPDATE SET
                     row_no = excluded.row_no,
@@ -506,11 +544,15 @@ def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str)
                     max_alert = excluded.max_alert,
                     source_filename = excluded.source_filename,
                     active_in_latest_import = 1,
+                    erp_change_note = excluded.erp_change_note,
+                    erp_change_detected_at = excluded.erp_change_detected_at,
                     imported_at = excluded.imported_at
                 """,
                 {
                     **material,
                     "source_filename": source_filename,
+                    "erp_change_note": change_note,
+                    "erp_change_detected_at": change_detected_at,
                     "imported_at": imported_at,
                 },
             )
@@ -520,6 +562,7 @@ def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str)
         "created": len(incoming_codes - before_codes),
         "updated": len(incoming_codes & before_codes),
         "inactive": len(before_codes - incoming_codes),
+        "changed": changed_count,
     }
 
 
@@ -544,6 +587,8 @@ def db_get_internal_materials(query: str = "", limit: int = 80) -> list[dict[str
                 e.material_code, e.row_no, e.material_name, e.spec_model, e.unit, e.category,
                 e.supplier_code, e.min_alert, e.max_alert, e.source_filename, e.imported_at,
                 COALESCE(e.active_in_latest_import, 1) AS active_in_latest_import,
+                COALESCE(e.erp_change_note, '') AS erp_change_note,
+                COALESCE(e.erp_change_detected_at, '') AS erp_change_detected_at,
                 COALESCE(n.material_usage, '') AS material_usage,
                 COALESCE(n.process_name, '') AS process_name,
                 COALESCE(n.note, '') AS note,
@@ -1125,6 +1170,19 @@ def render_internal_page(
                 if int(item.get("active_in_latest_import") or 0)
                 else "旧清单保留"
             )
+            erp_change_note = item.get("erp_change_note") or ""
+            erp_change_html = (
+                '<div class="erp-change-note">'
+                f'<strong>ERP 字段变更</strong><span>{html.escape(erp_change_note)}</span>'
+                "</div>"
+                if erp_change_note
+                else ""
+            )
+            erp_change_chip = (
+                '<span class="summary-chip is-warning">ERP字段变更</span>'
+                if erp_change_note
+                else ""
+            )
             records.append(
                 '<details class="material-record" open>'
                 '<summary class="material-record-head">'
@@ -1137,10 +1195,12 @@ def render_internal_page(
                 f'<span class="summary-chip">{html.escape(missing_text)}</span>'
                 f'<span class="summary-chip">文件 {int(file_count)}</span>'
                 f'<span class="summary-chip">{html.escape(latest_import_text)}</span>'
+                f"{erp_change_chip}"
                 '<span class="toggle-label"><span class="when-open">收起条目</span><span class="when-closed">展开填写</span></span>'
                 "</div>"
                 "</summary>"
                 f'<div class="material-meta">{meta_html}</div>'
+                f"{erp_change_html}"
                 '<div class="material-actions">'
                 '<section class="action-panel">'
                 "<h3>用途/工序补录</h3>"
@@ -1389,6 +1449,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                     f"本次清单 {stats['total']} 条，"
                     f"新增 {stats['created']} 条，"
                     f"更新 {stats['updated']} 条，"
+                    f"基础字段变更 {stats['changed']} 条，"
                     f"旧清单保留 {stats['inactive']} 条。"
                 )
             )
