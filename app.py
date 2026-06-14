@@ -1019,13 +1019,13 @@ def render_internal_page(
     materials = db_get_internal_materials(query)
 
     if not materials:
-        rows_html = (
-            '<tr><td colspan="8" class="empty-cell">'
+        records_html = (
+            '<div class="empty-cell">'
             "暂无物料记录。请先上传 ERP 导出的物料编码列表。"
-            "</td></tr>"
+            "</div>"
         )
     else:
-        rows: list[str] = []
+        records: list[str] = []
         for item in materials:
             code = item["material_code"]
             file_count = item["file_count"]
@@ -1056,32 +1056,59 @@ def render_internal_page(
                     )
                 files_html = (
                     '<div class="internal-files">'
-                    "<strong>最近上传文件</strong>"
+                    "<strong>已上传文档</strong>"
                     f"<ul>{''.join(file_rows) if file_rows else '<li>暂无文件</li>'}</ul>"
                     "</div>"
                 )
-            rows.append(
-                "<tr>"
-                f"<td>{html.escape(item['row_no'])}</td>"
-                f"<td><strong>{html.escape(code)}</strong></td>"
-                f"<td>{html.escape(item['material_name'])}</td>"
-                f"<td>{html.escape(item['spec_model'])}</td>"
-                f"<td>{html.escape(item['unit'])}</td>"
-                f"<td>{html.escape(item['category'])}</td>"
-                f"<td>{html.escape(item['supplier_code'])}</td>"
-                "<td>"
-                f'<form action="{app_url("/internal/materials/save")}" method="post" class="inline-form">'
+
+            meta_items = [
+                ("序号", item["row_no"]),
+                ("规格型号", item["spec_model"]),
+                ("单位", item["unit"]),
+                ("类别", item["category"]),
+                ("供应商编号", item["supplier_code"]),
+            ]
+            meta_html = "".join(
+                '<div class="meta-item">'
+                f"<span>{html.escape(label)}</span>"
+                f"<strong>{html.escape(value)}</strong>"
+                "</div>"
+                for label, value in meta_items
+            )
+            if file_count:
+                files_link = (
+                    f'<a class="file-count-link" href="{html.escape(internal_materials_url(query, "" if expanded_code == code else code), quote=True)}">'
+                    f'{html.escape("收起文件" if expanded_code == code else f"查看文件 {file_count}")}'
+                    "</a>"
+                )
+            else:
+                files_link = '<span class="file-count-link muted">暂无文件</span>'
+            records.append(
+                '<article class="material-record">'
+                '<div class="material-record-head">'
+                '<div class="material-title">'
+                f'<strong class="material-code">{html.escape(code)}</strong>'
+                f'<span class="material-name">{html.escape(item["material_name"])}</span>'
+                "</div>"
+                f"{files_link}"
+                "</div>"
+                f'<div class="material-meta">{meta_html}</div>'
+                '<div class="material-actions">'
+                '<section class="action-panel">'
+                "<h3>用途/工序补录</h3>"
+                f'<form action="{app_url("/internal/materials/save")}" method="post" class="record-form">'
                 f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
                 f'<input type="hidden" name="q" value="{html.escape(query, quote=True)}">'
                 f'<input name="material_usage" value="{html.escape(item["material_usage"], quote=True)}" placeholder="用途/作用">'
                 f'<select name="process_name">{select_options(PROCESS_TYPES, item["process_name"])}</select>'
                 f'<textarea name="note" rows="2" placeholder="内部备注">{html.escape(item["note"])}</textarea>'
-                '<button type="submit">保存</button>'
+                '<button type="submit">保存补录</button>'
                 "</form>"
                 f'<span class="muted">更新：{html.escape(note_updated)}</span>'
-                '<div class="row-divider"></div>'
-                '<div class="subsection-label">上传文档</div>'
-                f'<form action="{app_url("/internal/materials/upload-file")}" method="post" enctype="multipart/form-data" class="inline-form">'
+                "</section>"
+                '<section class="action-panel">'
+                "<h3>上传文档</h3>"
+                f'<form action="{app_url("/internal/materials/upload-file")}" method="post" enctype="multipart/form-data" class="record-form">'
                 f'<input type="hidden" name="material_code" value="{html.escape(code, quote=True)}">'
                 f'<input type="hidden" name="q" value="{html.escape(query, quote=True)}">'
                 f'<select name="document_type" required>{select_options(DOCUMENT_TYPES)}</select>'
@@ -1090,12 +1117,12 @@ def render_internal_page(
                 '<textarea name="file_note" rows="2" placeholder="这份文档的备注，可先不填"></textarea>'
                 '<button type="submit">上传文档</button>'
                 "</form>"
-                f'<a href="{html.escape(internal_materials_url(query, code), quote=True)}">文件 {file_count}</a>'
                 f"{files_html}"
-                "</td>"
-                "</tr>"
+                "</section>"
+                "</div>"
+                "</article>"
             )
-        rows_html = "".join(rows)
+        records_html = "".join(records)
 
     body = f"""<!doctype html>
 <html lang="zh-CN">
@@ -1144,23 +1171,7 @@ def render_internal_page(
         <input name="q" value="{html.escape(query, quote=True)}" placeholder="搜索物料编号、名称或规格">
         <button type="submit">搜索</button>
       </form>
-      <div class="table-wrap internal-table-wrap">
-        <table class="internal-table">
-          <thead>
-            <tr>
-              <th>序号</th>
-              <th>物料编号</th>
-              <th>物料名称</th>
-              <th>规格型号</th>
-              <th>单位</th>
-              <th>类别</th>
-              <th>供应商编号</th>
-              <th>用途/工序/文档</th>
-            </tr>
-          </thead>
-          <tbody>{rows_html}</tbody>
-        </table>
-      </div>
+      <div class="material-list">{records_html}</div>
     </section>
   </main>
   <script>

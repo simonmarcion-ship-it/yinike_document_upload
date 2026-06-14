@@ -252,6 +252,111 @@ button:hover {
   margin-top: 0;
 }
 
+.material-list {
+  display: grid;
+  gap: 14px;
+}
+
+.material-record {
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.material-record-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 16px;
+  background: #f0f4f8;
+  border-bottom: 1px solid #d9e2ec;
+}
+
+.material-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.material-code {
+  color: #1f2933;
+  font-size: 17px;
+}
+
+.material-name {
+  color: #334e68;
+  font-size: 15px;
+}
+
+.file-count-link {
+  flex: 0 0 auto;
+}
+
+.material-meta {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  background: #e4e7eb;
+  border-bottom: 1px solid #e4e7eb;
+}
+
+.meta-item {
+  min-width: 0;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.meta-item span {
+  display: block;
+  color: #829ab1;
+  font-size: 12px;
+}
+
+.meta-item strong {
+  display: block;
+  margin-top: 4px;
+  color: #1f2933;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.material-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px;
+}
+
+.action-panel {
+  min-width: 0;
+}
+
+.action-panel h3 {
+  margin: 0 0 10px;
+  color: #334e68;
+  font-size: 15px;
+}
+
+.record-form {
+  display: grid;
+  gap: 8px;
+}
+
+.record-form input,
+.record-form select,
+.record-form textarea {
+  margin-top: 0;
+}
+
+.record-form button {
+  width: fit-content;
+}
+
 .internal-table-wrap {
   max-height: 70vh;
   border: 1px solid #e4e7eb;
@@ -408,6 +513,20 @@ a:hover {
 
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .material-record-head,
+  .material-actions {
+    display: block;
+  }
+
+  .file-count-link,
+  .action-panel + .action-panel {
+    margin-top: 12px;
+  }
+
+  .material-meta {
+    grid-template-columns: 1fr 1fr;
   }
 
   .success-details {
