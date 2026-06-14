@@ -272,6 +272,16 @@ button:hover {
   padding: 14px 16px;
   background: #f0f4f8;
   border-bottom: 1px solid #d9e2ec;
+  cursor: pointer;
+  list-style: none;
+}
+
+.material-record-head::-webkit-details-marker {
+  display: none;
+}
+
+.material-record:not([open]) .material-record-head {
+  border-bottom: 0;
 }
 
 .material-title {
@@ -292,8 +302,51 @@ button:hover {
   font-size: 15px;
 }
 
-.file-count-link {
+.record-summary-status {
+  display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.status-badge,
+.summary-chip,
+.toggle-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-badge.is-complete {
+  background: #e3fcec;
+  color: #147d64;
+}
+
+.status-badge.is-incomplete {
+  background: #fff4e5;
+  color: #b7791f;
+}
+
+.summary-chip {
+  background: #ffffff;
+  color: #52606d;
+  border: 1px solid #d9e2ec;
+}
+
+.toggle-label {
+  color: #0b7285;
+}
+
+.material-record[open] .when-closed,
+.material-record:not([open]) .when-open {
+  display: none;
 }
 
 .material-meta {
@@ -518,6 +571,11 @@ a:hover {
   .material-record-head,
   .material-actions {
     display: block;
+  }
+
+  .record-summary-status {
+    justify-content: flex-start;
+    margin-top: 12px;
   }
 
   .file-count-link,

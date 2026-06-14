@@ -1031,7 +1031,7 @@ def render_internal_page(
             file_count = item["file_count"]
             note_updated = item["note_updated_at"] or "未补录"
             files_html = ""
-            if expanded_code == code:
+            if file_count:
                 file_rows = []
                 for file_item in db_get_internal_files(code):
                     download_url = app_url(
@@ -1075,23 +1075,33 @@ def render_internal_page(
                 "</div>"
                 for label, value in meta_items
             )
-            if file_count:
-                files_link = (
-                    f'<a class="file-count-link" href="{html.escape(internal_materials_url(query, "" if expanded_code == code else code), quote=True)}">'
-                    f'{html.escape("收起文件" if expanded_code == code else f"查看文件 {file_count}")}'
-                    "</a>"
-                )
-            else:
-                files_link = '<span class="file-count-link muted">暂无文件</span>'
+            has_usage = bool((item["material_usage"] or "").strip())
+            has_process = bool((item["process_name"] or "").strip())
+            has_document = int(file_count) > 0
+            missing_parts = []
+            if not has_usage:
+                missing_parts.append("用途")
+            if not has_process:
+                missing_parts.append("工序")
+            if not has_document:
+                missing_parts.append("文档")
+            status_class = "is-complete" if not missing_parts else "is-incomplete"
+            status_text = "完成" if not missing_parts else "未完成"
+            missing_text = "都已填写" if not missing_parts else "缺：" + "、".join(missing_parts)
             records.append(
-                '<article class="material-record">'
-                '<div class="material-record-head">'
+                '<details class="material-record" open>'
+                '<summary class="material-record-head">'
                 '<div class="material-title">'
                 f'<strong class="material-code">{html.escape(code)}</strong>'
                 f'<span class="material-name">{html.escape(item["material_name"])}</span>'
                 "</div>"
-                f"{files_link}"
+                '<div class="record-summary-status">'
+                f'<span class="status-badge {status_class}">{html.escape(status_text)}</span>'
+                f'<span class="summary-chip">{html.escape(missing_text)}</span>'
+                f'<span class="summary-chip">文件 {int(file_count)}</span>'
+                '<span class="toggle-label"><span class="when-open">收起条目</span><span class="when-closed">展开填写</span></span>'
                 "</div>"
+                "</summary>"
                 f'<div class="material-meta">{meta_html}</div>'
                 '<div class="material-actions">'
                 '<section class="action-panel">'
@@ -1120,7 +1130,7 @@ def render_internal_page(
                 f"{files_html}"
                 "</section>"
                 "</div>"
-                "</article>"
+                "</details>"
             )
         records_html = "".join(records)
 
