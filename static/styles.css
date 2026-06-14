@@ -340,12 +340,6 @@ button:hover {
   border: 1px solid #d9e2ec;
 }
 
-.summary-chip.is-warning {
-  background: #fff8db;
-  color: #8d6e00;
-  border-color: #f7d070;
-}
-
 .toggle-label {
   color: #0b7285;
 }
@@ -353,21 +347,6 @@ button:hover {
 .material-record[open] .when-closed,
 .material-record:not([open]) .when-open {
   display: none;
-}
-
-.erp-change-note {
-  display: grid;
-  gap: 4px;
-  padding: 10px 16px;
-  border-bottom: 1px solid #e4e7eb;
-  background: #fffdf0;
-  color: #5f4b00;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.erp-change-note strong {
-  color: #8d6e00;
 }
 
 .material-meta {

@@ -513,14 +513,26 @@ def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str)
         }
         before_codes = set(existing_rows)
         incoming_codes = {material["material_code"] for material in materials}
-        conn.execute("UPDATE erp_materials SET active_in_latest_import = 0")
-        changed_count = 0
+
+        conflicts = []
         for material in materials:
             existing = existing_rows.get(material["material_code"])
-            change_note = describe_erp_changes(existing, material) if existing else ""
-            change_detected_at = imported_at if change_note else ""
+            if not existing:
+                continue
+            change_note = describe_erp_changes(existing, material)
             if change_note:
-                changed_count += 1
+                conflicts.append(f"{material['material_code']}：{change_note}")
+        if conflicts:
+            shown = "；".join(conflicts[:20])
+            more = f"；另有 {len(conflicts) - 20} 条未显示" if len(conflicts) > 20 else ""
+            raise ValueError(
+                "ERP 清单与既有记录存在冲突，导入已取消。"
+                "请人工核对并修改 ERP 清单或既有记录后再导入。"
+                f"冲突项：{shown}{more}"
+            )
+
+        conn.execute("UPDATE erp_materials SET active_in_latest_import = 0")
+        for material in materials:
             conn.execute(
                 """
                 INSERT INTO erp_materials (
@@ -551,8 +563,8 @@ def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str)
                 {
                     **material,
                     "source_filename": source_filename,
-                    "erp_change_note": change_note,
-                    "erp_change_detected_at": change_detected_at,
+                    "erp_change_note": "",
+                    "erp_change_detected_at": "",
                     "imported_at": imported_at,
                 },
             )
@@ -562,7 +574,6 @@ def db_sync_erp_materials(materials: list[dict[str, str]], source_filename: str)
         "created": len(incoming_codes - before_codes),
         "updated": len(incoming_codes & before_codes),
         "inactive": len(before_codes - incoming_codes),
-        "changed": changed_count,
     }
 
 
@@ -1170,19 +1181,6 @@ def render_internal_page(
                 if int(item.get("active_in_latest_import") or 0)
                 else "旧清单保留"
             )
-            erp_change_note = item.get("erp_change_note") or ""
-            erp_change_html = (
-                '<div class="erp-change-note">'
-                f'<strong>ERP 字段变更</strong><span>{html.escape(erp_change_note)}</span>'
-                "</div>"
-                if erp_change_note
-                else ""
-            )
-            erp_change_chip = (
-                '<span class="summary-chip is-warning">ERP字段变更</span>'
-                if erp_change_note
-                else ""
-            )
             records.append(
                 '<details class="material-record" open>'
                 '<summary class="material-record-head">'
@@ -1195,12 +1193,10 @@ def render_internal_page(
                 f'<span class="summary-chip">{html.escape(missing_text)}</span>'
                 f'<span class="summary-chip">文件 {int(file_count)}</span>'
                 f'<span class="summary-chip">{html.escape(latest_import_text)}</span>'
-                f"{erp_change_chip}"
                 '<span class="toggle-label"><span class="when-open">收起条目</span><span class="when-closed">展开填写</span></span>'
                 "</div>"
                 "</summary>"
                 f'<div class="material-meta">{meta_html}</div>'
-                f"{erp_change_html}"
                 '<div class="material-actions">'
                 '<section class="action-panel">'
                 "<h3>用途/工序补录</h3>"
@@ -1449,7 +1445,6 @@ class UploadHandler(BaseHTTPRequestHandler):
                     f"本次清单 {stats['total']} 条，"
                     f"新增 {stats['created']} 条，"
                     f"更新 {stats['updated']} 条，"
-                    f"基础字段变更 {stats['changed']} 条，"
                     f"旧清单保留 {stats['inactive']} 条。"
                 )
             )
