@@ -82,6 +82,11 @@ http://127.0.0.1:8080/
 | `UPLOAD_DATA_DIR` | 上传文件和数据库保存目录，默认 `./data` |
 | `MAX_UPLOAD_MB` | 单个文件最大大小，默认 `30` |
 | `UPLOAD_PASSWORD` | 上传页面访问密码，默认 `20250605` |
+| `INTERNAL_PASSWORD` | 内部物料维护页面访问密码，默认 `20250605`；建议上线后与供应商上传密码分开 |
+| `MINERU_API_KEY` | MinerU API key；为空时内部文件只保存，不提交解析 |
+| `MINERU_MODEL_VERSION` | MinerU 解析模型，默认 `vlm` |
+| `MINERU_LANGUAGE` | MinerU 文档语言，默认 `ch` |
+| `MINERU_MAX_WAIT_SECONDS` | 上传后同步等待解析结果的秒数，默认 `12`；超时后可在页面刷新状态 |
 
 ## Docker 部署
 
@@ -123,6 +128,10 @@ https://www.hajimitech.com/yinike/upload_document/
 BASE_PATH=/yinike/upload_document
 PORT=8080
 UPLOAD_PASSWORD=20250605
+INTERNAL_PASSWORD=20250605
+MINERU_API_KEY=填你的_MinerU_API_Key
+MINERU_MODEL_VERSION=vlm
+MINERU_LANGUAGE=ch
 ```
 
 然后在 `/www/server/panel/vhost/nginx/www.hajimitech.com.conf` 的 `server { ... }` 内增加：
@@ -132,7 +141,7 @@ location = /yinike/upload_document {
     return 301 /yinike/upload_document/;
 }
 
-location /yinike/upload_document/ {
+location ^~ /yinike/upload_document/ {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
 
@@ -147,7 +156,7 @@ location /yinike/upload_document/ {
 }
 ```
 
-这里的 `proxy_pass` 不要在 `8080` 后面加 `/`，否则后端收到的路径会被 nginx 改写，子路径部署会出问题。
+这里的 `proxy_pass` 不要在 `8080` 后面加 `/`，否则后端收到的路径会被 nginx 改写，子路径部署会出问题。`^~` 用来避免宝塔默认静态文件规则抢走 CSS/JS 请求。
 
 备选：直接 Docker 运行：
 
@@ -173,7 +182,34 @@ data/
         20260605_153100_xxxxxxxx_supplier_file.xlsx
         20260605_153200_xxxxxxxx_supplier_image.jpg
       SDS/
+  internal_files/
+    AAA0010006/
+      TDS（产品技术资料）/
+        20260606_120000_xxxxxxxx_internal_file.pdf
+  mineru_results/
+    12/
+      20260606_120010_result.json
+      mineru_result.zip
+      full.md
 ```
+
+## 内部物料维护页面
+
+内部人员访问：
+
+```text
+https://service.hajimitech.com/yinike/upload_document/internal/materials/
+```
+
+内部页面可以：
+
+- 上传并覆盖 ERP 导出的物料编码列表 `.xlsx`。
+- 按物料编号、物料名称、规格搜索。
+- 对每个物料补充用途/作用、适用工序、内部备注。
+- 对每个物料上传资料文件。
+- 内部资料文件上传后会提交 MinerU 解析；页面显示 batch、状态、错误信息和结果链接。
+
+导入 ERP 清单只覆盖 ERP 基础字段，已经人工补录的用途、工序、备注和文件会保留。
 
 ## 供应商填写字段
 
@@ -193,4 +229,4 @@ data/
 - 当前允许上传任意资料文件。不要把 `data/` 目录作为静态目录公开。
 - 供应商端不会展示最近上传记录，避免不同供应商互相看到资料。
 - 公网部署时，服务器路径不要暴露 `data/` 目录。
-- 服务器应定期备份 `UPLOAD_DATA_DIR`，至少备份 `uploads.db` 和 `files/`。
+- 服务器应定期备份 `UPLOAD_DATA_DIR`，至少备份 `uploads.db`、`files/`、`internal_files/` 和 `mineru_results/`。

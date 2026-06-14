@@ -231,6 +231,96 @@ button:hover {
   overflow-x: auto;
 }
 
+.internal-import {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+}
+
+.internal-import label {
+  flex: 1;
+}
+
+.search-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.search-form input {
+  margin-top: 0;
+}
+
+.internal-table-wrap {
+  max-height: 70vh;
+  border: 1px solid #e4e7eb;
+}
+
+.internal-table {
+  min-width: 1500px;
+}
+
+.internal-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.inline-form {
+  display: grid;
+  gap: 8px;
+  min-width: 260px;
+}
+
+.inline-form input,
+.inline-form select,
+.inline-form textarea {
+  margin-top: 0;
+}
+
+.inline-form button {
+  width: fit-content;
+}
+
+.internal-files {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  background: #f0f4f8;
+}
+
+.internal-files ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.mineru-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  color: #486581;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mineru-status {
+  font-weight: 700;
+  color: #0b7285;
+}
+
+.error-text {
+  color: #b42318;
+  word-break: break-word;
+}
+
+.empty-cell {
+  color: #829ab1;
+  text-align: center;
+  padding: 28px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
